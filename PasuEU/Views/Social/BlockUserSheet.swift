@@ -34,17 +34,22 @@ struct BlockUserSheet: View {
 
             HStack(spacing: 12) {
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .foregroundStyle(.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
 
                 Button {
                     Task { await block() }
                 } label: {
                     if isBlocking { ProgressView().tint(.white) } else { Text("Confirm") }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.red)
                 .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color.red.opacity(isBlocking || didBlock ? 0.4 : 1))
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
                 .disabled(isBlocking || didBlock)
             }
             .padding(.horizontal)

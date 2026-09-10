@@ -6,6 +6,9 @@ struct HomeDashboardView: View {
     @State private var openRequests: [ServiceRequest] = []
     @State private var showNewRequestSheet = false
     @State private var selectedType: ServiceType = .pabili
+    @State private var isAvailable = false
+
+    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
 
     var body: some View {
         NavigationStack {
@@ -17,13 +20,15 @@ struct HomeDashboardView: View {
                         clientServices
                         buddyCountBadge
                     } else {
+                        availabilityToggle
+                        buddyStats
                         buddyOpenOrders
                     }
                 }
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
-            .toolbarBackground(Color(red: 0.42, green: 0.08, blue: 0.1), for: .navigationBar)
+            .toolbarBackground(brand, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
@@ -39,20 +44,164 @@ struct HomeDashboardView: View {
         .sheet(isPresented: $showNewRequestSheet) {
             NewRequestView(type: selectedType)
         }
-        .task { attachListeners() }
+        .task {
+            attachListeners()
+            isAvailable = supabase.currentUser?.isAvailable ?? false
+        }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Good day, \(supabase.currentUser?.name ?? "there")!")
-                .font(.title3.bold())
-            Text(supabase.currentUser?.role == .buddy
-                 ? "Ready to accept orders?"
-                 : "What can we do for you?")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 14) {
+            Image(systemName: supabase.currentUser?.profileIconName ?? "person.crop.circle.fill")
+                .font(.system(size: 28))
+                .foregroundStyle(brand)
+                .frame(width: 54, height: 54)
+                .background(brand.opacity(0.12))
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Good day, \(supabase.currentUser?.name ?? "there")!")
+                    .font(.title3.bold())
+                Text(supabase.currentUser?.role == .buddy
+                     ? "Ready to accept orders?"
+                     : "What can we do for you?")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
         }
     }
+
+    // MARK: - Buddy-only sections
+
+    private var availabilityToggle: some View {
+        Toggle(isOn: Binding(
+            get: { isAvailable },
+            set: { newValue in
+                isAvailable = newValue
+                Task {
+                    if let uid = supabase.currentUser?.id {
+                        try? await supabase.setAvailability(newValue, for: uid)
+                    }
+                }
+            }
+        )) {
+            HStack(spacing: 10) {
+                Image(systemName: isAvailable ? "bolt.fill" : "moon.zzz.fill")
+                    .foregroundStyle(isAvailable ? .green : .secondary)
+                Text(isAvailable ? "You're online and visible to clients" : "You're offline")
+                    .font(.subheadline.bold())
+            }
+        }
+        .tint(brand)
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var buddyStats: some View {
+        HStack(spacing: 12) {
+            statCard(icon: "star.fill",
+                     value: String(format: "%.1f", supabase.currentUser?.averageRating ?? 0),
+                     label: "Rating", tint: .yellow)
+            statCard(icon: "checkmark.seal.fill",
+                     value: "\(supabase.currentUser?.ratingCount ?? 0)",
+                     label: "Completed", tint: .green)
+            statCard(icon: "envelope.badge.fill",
+                     value: "\(openRequests.count)",
+                     label: "Open Now", tint: brand)
+        }
+    }
+
+    private func statCard(icon: String, value: String, label: String, tint: Color) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon).foregroundStyle(tint)
+            Text(value).font(.headline)
+            Text(label).font(.caption2).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var buddyOpenOrders: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Available Orders").font(.headline)
+
+            if openRequests.isEmpty {
+                emptyOrdersState
+            }
+
+            ForEach(openRequests) { request in
+                NavigationLink {
+                    RequestDetailView(request: request)
+                } label: {
+                    orderRow(for: request)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var emptyOrdersState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tray")
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+            Text("No open requests right now")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Text("New requests will show up here as soon as a client posts one.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+
+    private func orderRow(for request: ServiceRequest) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: request.type.iconName)
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(brand)
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(request.type.displayName)
+                        .font(.subheadline.bold())
+                    if request.isUrgent {
+                        Text("URGENT")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.red.opacity(0.15))
+                            .foregroundStyle(.red)
+                            .clipShape(Capsule())
+                    }
+                }
+                Text(request.meetingPlace)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(request.createdAt.formatted(date: .omitted, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    // MARK: - Client-only sections
 
     private var clientServices: some View {
         VStack(spacing: 12) {
@@ -78,7 +227,7 @@ struct HomeDashboardView: View {
                     }
                     .padding()
                     .foregroundStyle(.white)
-                    .background(Color(red: 0.42, green: 0.08, blue: 0.1))
+                    .background(brand)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
             }
@@ -103,42 +252,6 @@ struct HomeDashboardView: View {
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var buddyOpenOrders: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Available Orders:").font(.headline)
-            if openRequests.isEmpty {
-                Text("No open requests right now.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            ForEach(openRequests) { request in
-                NavigationLink {
-                    RequestDetailView(request: request)
-                } label: {
-                    HStack {
-                        Image(systemName: request.type.iconName)
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color(red: 0.42, green: 0.08, blue: 0.1))
-                            .clipShape(Circle())
-                        VStack(alignment: .leading) {
-                            Text(request.type.displayName.uppercased()).font(.subheadline.bold())
-                            Text("Added \(request.createdAt.formatted(date: .omitted, time: .shortened))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Circle().fill(.red).frame(width: 8, height: 8)
-                    }
-                    .padding(10)
-                    .background(Color(.secondarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-                .buttonStyle(.plain)
-            }
-        }
     }
 
     private func attachListeners() {

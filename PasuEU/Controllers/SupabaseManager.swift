@@ -47,17 +47,17 @@ final class SupabaseManager: ObservableObject {
             id: UUID(uuidString: role == .client
                 ? "00000000-0000-0000-0000-0000000000C1"
                 : "00000000-0000-0000-0000-0000000000B1")!,
-            name: role == .client ? "Juan Dela Cruz" : "Carlo Reyes",
+            name: role == .client ? "Aiah Arceta" : "Mikha Lim",
             universityEmail: role == .client
-                ? "juan.delacruz@student.msuef.edu.ph"
-                : "carlo.reyes@student.msuef.edu.ph",
+                ? "aiah@student.mseuf.edu.ph"
+                : "mikha@student.mseuf.edu.ph",
             studentNumber: role == .buddy ? "22-00123" : nil,
             contactNumber: "0917 123 4567",
             role: role,
             aboutMe: role == .buddy ? "Happy to help with errands around campus!" : nil,
             isOnline: true,
-            averageRating: role == .buddy ? 4.8 : 0,
-            ratingCount: role == .buddy ? 12 : 0,
+            averageRating: role == .buddy ? 0 : 0,
+            ratingCount: role == .buddy ? 0 : 0,
             isAvailable: role == .buddy
         )
         currentUser = demoUser
@@ -429,20 +429,6 @@ final class SupabaseManager: ObservableObject {
         return DataSubscription(channel: channel, client: client)
     }
 
-    private func fetchConversations(userId: UUID, onChange: @escaping ([Conversation]) -> Void) async {
-        do {
-            let conversations: [Conversation] = try await client.from("conversations")
-                .select()
-                .contains("participant_ids", value: [userId.uuidString])
-                .order("last_message_at", ascending: false)
-                .execute()
-                .value
-            onChange(conversations)
-        } catch {
-            onChange([])
-        }
-    }
-
     func fetchUser(id: UUID) async throws -> AppUser {
         try await client.from("users")
             .select()
@@ -450,22 +436,6 @@ final class SupabaseManager: ObservableObject {
             .single()
             .execute()
             .value
-    }
-
-    func blockUser(blockerId: UUID, blockedId: UUID) async throws {
-        try await client.from("blocks")
-            .insert(["blocker_id": blockerId.uuidString, "blocked_id": blockedId.uuidString])
-            .execute()
-    }
-
-    func reportUser(reporterId: UUID, reportedId: UUID, reason: String) async throws {
-        try await client.from("reports")
-            .insert([
-                "reporter_id": reporterId.uuidString,
-                "reported_id": reportedId.uuidString,
-                "reason": reason
-            ])
-            .execute()
     }
 
     func submitFeedback(_ feedback: AppFeedback) async throws {

@@ -82,7 +82,7 @@ struct OTPVerificationView: View {
     private func verify() async {
         isVerifying = true
         errorMessage = nil
-        do {
+        /*do {
             try await supabase.client.auth.verifyOTP(
                 email: email, token: code,
                 type: purpose == .passwordReset ? .recovery : .email
@@ -91,7 +91,7 @@ struct OTPVerificationView: View {
         } catch {
             errorMessage = "That code didn't work — check it and try again."
         }
-        isVerifying = false
+        isVerifying = false*/
     }
 }
 

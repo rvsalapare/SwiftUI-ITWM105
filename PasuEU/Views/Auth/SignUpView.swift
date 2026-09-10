@@ -14,62 +14,119 @@ struct SignUpView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
+    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                Text(role == .buddy ? "Register and become a BUDDY!" : "SIGN UP!")
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color(red: 0.42, green: 0.08, blue: 0.1))
+            VStack(spacing: 0) {
+                hero
 
-                Picker("I am a...", selection: $role) {
-                    Text("Client").tag(UserRole.client)
-                    Text("Errand Buddy").tag(UserRole.buddy)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
+                VStack(spacing: 16) {
+                    Picker("I am a...", selection: $role) {
+                        Text("Client").tag(UserRole.client)
+                        Text("Errand Buddy").tag(UserRole.buddy)
+                    }
+                    .pickerStyle(.segmented)
 
-                Group {
-                    TextField("Name *", text: $name)
+                    fieldRow(icon: "person.fill") {
+                        TextField("Name", text: $name)
+                    }
                     if role == .buddy {
-                        TextField("Student Number *", text: $studentNumber)
+                        fieldRow(icon: "number") {
+                            TextField("Student Number", text: $studentNumber)
+                        }
                     }
-                    TextField("University Email *", text: $universityEmail)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.emailAddress)
-                    TextField("Contact Number *", text: $contactNumber)
-                        .keyboardType(.phonePad)
-                    SecureField("Password *", text: $password)
-                    SecureField("Confirm Password *", text: $confirmPassword)
-                }
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal)
-
-                if let errorMessage {
-                    Text(errorMessage).font(.caption).foregroundStyle(.red)
-                }
-
-                Button {
-                    Task { await signUp() }
-                } label: {
-                    if isLoading {
-                        ProgressView().tint(.white)
-                    } else {
-                        Text("Create Account").frame(maxWidth: .infinity)
+                    fieldRow(icon: "envelope.fill") {
+                        TextField("University Email", text: $universityEmail)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.emailAddress)
                     }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
-                .padding(.horizontal)
-                .disabled(!isFormValid || isLoading)
+                    fieldRow(icon: "phone.fill") {
+                        TextField("Contact Number", text: $contactNumber)
+                            .keyboardType(.phonePad)
+                    }
+                    fieldRow(icon: "lock.fill") {
+                        SecureField("Password", text: $password)
+                    }
+                    fieldRow(icon: "lock.fill") {
+                        SecureField("Confirm Password", text: $confirmPassword)
+                    }
 
-                Button("Already have an account? Login") { dismiss() }
-                    .font(.footnote)
-                    .padding(.bottom, 24)
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Button {
+                        Task { await signUp() }
+                    } label: {
+                        if isLoading {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("Create Account")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding()
+                    .background(isFormValid ? brand : brand.opacity(0.4))
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .disabled(!isFormValid || isLoading)
+
+                    Button("Already have an account? Login") { dismiss() }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, 24)
+                }
+                .padding(24)
             }
         }
+        .background(Color(.systemGroupedBackground))
+        .ignoresSafeArea(edges: .top)
+    }
+
+    private var hero: some View {
+        VStack(spacing: 8) {
+            Image(systemName: role == .buddy ? "figure.walk.circle.fill" : "person.crop.circle.fill")
+                .font(.system(size: 38))
+                .foregroundStyle(.white)
+                .frame(width: 76, height: 76)
+                .background(.white.opacity(0.18))
+                .clipShape(Circle())
+
+            Text(role == .buddy ? "Become an Errand Buddy" : "Create Your Account")
+                .font(.title2.bold())
+                .foregroundStyle(.white)
+
+            Text(role == .buddy ? "Earn by helping fellow students" : "Get help with errands around campus")
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 76)
+        .padding(.bottom, 40)
+        .background(
+            LinearGradient(
+                colors: [brand, Color(red: 0.24, green: 0.04, blue: 0.06)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32))
+    }
+
+    private func fieldRow<Content: View>(icon: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(brand)
+                .frame(width: 20)
+            content()
+        }
+        .padding()
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var isFormValid: Bool {
