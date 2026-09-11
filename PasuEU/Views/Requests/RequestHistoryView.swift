@@ -124,7 +124,7 @@ struct RequestHistoryView: View {
 
     private func attachListener() {
         guard let uid = supabase.currentUser?.id else { return }
-        _ = supabase.listenToMyRequests(clientId: uid) { requests in
+        _ = supabase.listenToMyRequests(userId: uid) { requests in
             self.requests = requests
         }
     }

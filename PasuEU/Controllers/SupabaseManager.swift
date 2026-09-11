@@ -17,6 +17,12 @@ final class DataSubscription {
     }
 }
 
+struct RequestUpdateFailed: LocalizedError {
+    var errorDescription: String? {
+        "That update didn't work"
+    }
+}
+
 @MainActor
 final class SupabaseManager: ObservableObject {
 
@@ -30,8 +36,8 @@ final class SupabaseManager: ObservableObject {
     private init() {
 
         client = SupabaseClient(
-            supabaseURL: URL(string: "https://YOUR_PROJECT_REF.supabase.co")!,
-            supabaseKey: "YOUR_PUBLIC_ANON_KEY"
+            supabaseURL: URL(string: "https://orjusbhjpkfwjkzffgfj.supabase.co")!,
+            supabaseKey: "sb_publishable_-cTkpoUjOWJA2a6Sav2oWQ_nBg1RJSM"
         )
 
         Task {
@@ -172,25 +178,25 @@ final class SupabaseManager: ObservableObject {
         try await client.from("requests").insert(request).execute()
     }
 
-    func listenToMyRequests(clientId: UUID, onChange: @escaping ([ServiceRequest]) -> Void) -> DataSubscription {
-        Task { await fetchMyRequests(clientId: clientId, onChange: onChange) }
+    func listenToMyRequests(userId: UUID, onChange: @escaping ([ServiceRequest]) -> Void) -> DataSubscription {
+        Task { await fetchMyRequests(userId: userId, onChange: onChange) }
 
-        let channel = client.realtimeV2.channel("public:requests:mine:\(clientId)")
+        let channel = client.realtimeV2.channel("public:requests:mine:\(userId)")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "requests")
             await channel.subscribe()
             for await _ in changes {
-                await fetchMyRequests(clientId: clientId, onChange: onChange)
+                await fetchMyRequests(userId: userId, onChange: onChange)
             }
         }
         return DataSubscription(channel: channel, client: client)
     }
 
-    private func fetchMyRequests(clientId: UUID, onChange: @escaping ([ServiceRequest]) -> Void) async {
+    private func fetchMyRequests(userId: UUID, onChange: @escaping ([ServiceRequest]) -> Void) async {
         do {
             let requests: [ServiceRequest] = try await client.from("requests")
                 .select()
-                .eq("client_id", value: clientId)
+                .or("client_id.eq.\(userId.uuidString),buddy_id.eq.\(userId.uuidString)")
                 .order("created_at", ascending: false)
                 .execute()
                 .value
@@ -229,10 +235,19 @@ final class SupabaseManager: ObservableObject {
     }
 
     func acceptRequest(_ requestId: UUID, buddyId: UUID) async throws {
-        try await client.from("requests")
-            .update(["buddy_id": buddyId.uuidString, "status": RequestStatus.accepted.rawValue])
-            .eq("id", value: requestId)
+        let updated: [ServiceRequest] = try await client.from("requests")
+            .update([
+                "buddy_id": buddyId.uuidString.lowercased(),
+                "status": RequestStatus.accepted.rawValue
+            ])
+            .eq("id", value: requestId.uuidString.lowercased())
+            .select()
             .execute()
+            .value
+
+        guard !updated.isEmpty else {
+            throw RequestUpdateFailed()
+        }
     }
 
     func updateRequestStatus(_ requestId: UUID, status: RequestStatus) async throws {
