@@ -4,6 +4,8 @@ struct RequestDetailView: View {
     @EnvironmentObject var supabase: SupabaseManager
     @State var request: ServiceRequest
     @State private var isDownloading = false
+    @State private var downloadedFileURL: URL?
+    @State private var showShareSheet = false
     @State private var errorMessage: String?
     @State private var showRating = false
     @State private var showReportSheet = false
@@ -119,6 +121,12 @@ struct RequestDetailView: View {
         }
         .background(Color(.systemGroupedBackground))
         .ignoresSafeArea(edges: .top)
+        .sheet(isPresented: $showShareSheet) {
+            if let downloadedFileURL {
+                ShareSheet(items: [downloadedFileURL])
+                    .presentationDetents([.medium, .large])
+            }
+        }
         .sheet(isPresented: $showRating) {
             RatingView(request: request)
         }
@@ -253,7 +261,9 @@ struct RequestDetailView: View {
             let data = try await supabase.downloadFile(path: "\(request.id.uuidString)/\(fileName)")
             let tempURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(fileName)
-            try data.write(to: tempURL)
+            try data.write(to: tempURL, options: .atomic)
+            downloadedFileURL = tempURL
+            showShareSheet = true
         } catch {
             errorMessage = error.localizedDescription
         }

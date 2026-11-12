@@ -18,13 +18,11 @@ struct SettingsView: View {
                             toggleRow(icon: "bell.fill", title: "Notifications", isOn: $notificationsOn)
                             Divider().padding(.leading, 60)
                             navRow(icon: "info.circle.fill", title: "About") {
-                                Text("About PasuEU — version, university, and team info.")
-                                    .padding()
+                                AboutView()
                             }
                             Divider().padding(.leading, 60)
                             navRow(icon: "questionmark.circle.fill", title: "Help") {
-                                Text("Help & FAQ content goes here.")
-                                    .padding()
+                                HelpView()
                             }
                         }
 

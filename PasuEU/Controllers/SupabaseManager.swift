@@ -135,7 +135,7 @@ final class SupabaseManager: ObservableObject {
         let channel = client.realtimeV2.channel("public:users:buddies")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "users")
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await _ in changes {
                 await fetchAvailableBuddies(onChange: onChange)
             }
@@ -184,7 +184,7 @@ final class SupabaseManager: ObservableObject {
         let channel = client.realtimeV2.channel("public:requests:mine:\(userId)")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "requests")
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await _ in changes {
                 await fetchMyRequests(userId: userId, onChange: onChange)
             }
@@ -212,7 +212,7 @@ final class SupabaseManager: ObservableObject {
         let channel = client.realtimeV2.channel("public:requests:open")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "requests")
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await _ in changes {
                 await fetchOpenRequests(onChange: onChange)
             }
@@ -265,7 +265,7 @@ final class SupabaseManager: ObservableObject {
         let channel = client.realtimeV2.channel("public:users:location:\(buddyId)")
         Task {
             let changes = channel.postgresChange(UpdateAction.self, table: "users")
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await change in changes {
                 guard let record = try? change.decodeRecord(as: AppUser.self, decoder: JSONDecoder()),
                       record.id == buddyId,
@@ -307,7 +307,7 @@ final class SupabaseManager: ObservableObject {
         let channel = client.realtimeV2.channel("public:messages:\(conversationId)")
         Task {
             let changes = channel.postgresChange(InsertAction.self, table: "messages")
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await _ in changes {
                 await fetchMessages(conversationId: conversationId, onChange: onChange)
             }
@@ -351,7 +351,7 @@ final class SupabaseManager: ObservableObject {
         let channel = client.realtimeV2.channel("public:conversations:\(userId)")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "conversations")
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await _ in changes {
                 await fetchConversations(userId: userId, onChange: onChange)
             }
@@ -436,7 +436,7 @@ final class SupabaseManager: ObservableObject {
         let channel = client.realtimeV2.channel("public:conversations:\(userId)")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "conversations")
-            await channel.subscribe()
+            try? await channel.subscribeWithError()
             for await _ in changes {
                 await fetchConversations(userId: userId, onChange: onChange)
             }

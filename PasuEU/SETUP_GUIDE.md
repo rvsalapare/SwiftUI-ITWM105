@@ -407,3 +407,24 @@ alter publication supabase_realtime add table conversations;
 4. Test sign-up → check **Authentication → Users** and **Table Editor → users** in the Supabase dashboard to confirm a row appears in both places
 5. Test a Paprint file upload → check **Storage → request-files** for the uploaded file
 
+
+## 15. Restrict Paprint file access
+
+Replaces the step 7 read policy so only the request's client and its assigned buddy can read a file. Files are stored as `<request id>/<file name>`, so the first folder name identifies the request. Run in the SQL Editor:
+
+```sql
+drop policy if exists "Signed-in users can read request files" on storage.objects;
+
+create policy "Request parties can read request files"
+  on storage.objects for select
+  using (
+    bucket_id = 'request-files'
+    and exists (
+      select 1 from public.requests r
+      where r.id::text = (storage.foldername(name))[1]
+        and (r.client_id = auth.uid() or r.buddy_id = auth.uid())
+    )
+  );
+```
+
+A buddy can read the file only after accepting the request, because `buddy_id` is set at that moment.
