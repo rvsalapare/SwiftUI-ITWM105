@@ -456,4 +456,13 @@ final class SupabaseManager: ObservableObject {
     func submitFeedback(_ feedback: AppFeedback) async throws {
         try await client.from("feedback").insert(feedback).execute()
     }
+
+    func submitIssue(userId: UUID, description: String) async throws {
+        try await client.from("issue_reports")
+            .insert([
+                "user_id": userId.uuidString,
+                "description": description
+            ])
+            .execute()
+    }
 }

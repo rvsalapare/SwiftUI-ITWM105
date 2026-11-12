@@ -428,3 +428,22 @@ create policy "Request parties can read request files"
 ```
 
 A buddy can read the file only after accepting the request, because `buddy_id` is set at that moment.
+
+
+## 16. Issue reports table
+
+Backs the "Report an issue" row in Settings. Users can insert their own reports only; there is no read, update, or delete access from the client. Run in the SQL Editor:
+
+```sql
+create table issue_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  description text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table issue_reports enable row level security;
+
+create policy "Users can insert their own issue reports"
+  on issue_reports for insert with check (auth.uid() = user_id);
+```

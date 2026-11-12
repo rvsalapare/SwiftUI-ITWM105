@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject var supabase: SupabaseManager
     @State private var notificationsOn = true
     @State private var showFeedbackSheet = false
+    @State private var showReportIssueSheet = false
 
     private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
 
@@ -27,7 +28,9 @@ struct SettingsView: View {
                         }
 
                         sectionBlock(title: "Feedback") {
-                            actionRow(icon: "exclamationmark.bubble.fill", title: "Report an issue", tint: .orange) {}
+                            actionRow(icon: "exclamationmark.bubble.fill", title: "Report an issue", tint: .orange) {
+                                showReportIssueSheet = true
+                            }
                             Divider().padding(.leading, 60)
                             actionRow(icon: "text.bubble.fill", title: "Send Feedback") {
                                 showFeedbackSheet = true
@@ -54,6 +57,9 @@ struct SettingsView: View {
             .ignoresSafeArea(edges: .top)
             .sheet(isPresented: $showFeedbackSheet) {
                 AppFeedbackView()
+            }
+            .sheet(isPresented: $showReportIssueSheet) {
+                ReportIssueView()
             }
         }
     }
