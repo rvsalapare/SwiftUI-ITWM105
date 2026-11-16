@@ -14,12 +14,15 @@ struct SignUpView: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
-
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                hero
+                ScreenHeader(
+                    role == .buddy ? "Become an Errand Buddy" : "Create Your Account",
+                    subtitle: role == .buddy ? "Earn by helping fellow students" : "Get help with errands around campus",
+                    icon: role == .buddy ? "figure.walk.circle.fill" : "person.crop.circle.fill",
+                    style: .centered
+                )
 
                 VStack(spacing: 16) {
                     Picker("I am a...", selection: $role) {
@@ -28,27 +31,33 @@ struct SignUpView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    fieldRow(icon: "person.fill") {
+                    FormFieldRow(icon: "person.fill") {
                         TextField("Name", text: $name)
                     }
                     if role == .buddy {
-                        fieldRow(icon: "number") {
+                        FormFieldRow(icon: "number") {
                             TextField("Student Number", text: $studentNumber)
                         }
                     }
-                    fieldRow(icon: "envelope.fill") {
+                    FormFieldRow(icon: "envelope.fill") {
                         TextField("University Email", text: $universityEmail)
                             .textInputAutocapitalization(.never)
                             .keyboardType(.emailAddress)
                     }
-                    fieldRow(icon: "phone.fill") {
+                    if !trimmedEmail.isEmpty && !isEmailValid {
+                        Text("Use your university email (\(Self.requiredEmailSuffix))")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    FormFieldRow(icon: "phone.fill") {
                         TextField("Contact Number", text: $contactNumber)
                             .keyboardType(.phonePad)
                     }
-                    fieldRow(icon: "lock.fill") {
+                    FormFieldRow(icon: "lock.fill") {
                         SecureField("Password", text: $password)
                     }
-                    fieldRow(icon: "lock.fill") {
+                    FormFieldRow(icon: "lock.fill") {
                         SecureField("Confirm Password", text: $confirmPassword)
                     }
 
@@ -59,22 +68,9 @@ struct SignUpView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    Button {
+                    PrimaryButton("Create Account", isLoading: isLoading, isDisabled: !isFormValid) {
                         Task { await signUp() }
-                    } label: {
-                        if isLoading {
-                            ProgressView().tint(.white)
-                        } else {
-                            Text("Create Account")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                        }
                     }
-                    .padding()
-                    .background(isFormValid ? brand : brand.opacity(0.4))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .disabled(!isFormValid || isLoading)
 
                     Button("Already have an account? Login") { dismiss() }
                         .font(.footnote)
@@ -88,49 +84,19 @@ struct SignUpView: View {
         .ignoresSafeArea(edges: .top)
     }
 
-    private var hero: some View {
-        VStack(spacing: 8) {
-            Image(systemName: role == .buddy ? "figure.walk.circle.fill" : "person.crop.circle.fill")
-                .font(.system(size: 38))
-                .foregroundStyle(.white)
-                .frame(width: 76, height: 76)
-                .background(.white.opacity(0.18))
-                .clipShape(Circle())
+    private static let requiredEmailSuffix = "@student.mseuf.edu.ph"
 
-            Text(role == .buddy ? "Become an Errand Buddy" : "Create Your Account")
-                .font(.title2.bold())
-                .foregroundStyle(.white)
-
-            Text(role == .buddy ? "Earn by helping fellow students" : "Get help with errands around campus")
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.85))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 76)
-        .padding(.bottom, 40)
-        .background(
-            LinearGradient(
-                colors: [brand, Color(red: 0.24, green: 0.04, blue: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-        )
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32))
+    private var trimmedEmail: String {
+        universityEmail.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func fieldRow<Content: View>(icon: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(brand)
-                .frame(width: 20)
-            content()
-        }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+    private var isEmailValid: Bool {
+        let email = trimmedEmail.lowercased()
+        return email.hasSuffix(Self.requiredEmailSuffix) && email.count > Self.requiredEmailSuffix.count
     }
 
     private var isFormValid: Bool {
-        !name.isEmpty && !universityEmail.isEmpty && !contactNumber.isEmpty
+        !name.isEmpty && isEmailValid && !contactNumber.isEmpty
             && password.count >= 6 && password == confirmPassword
             && (role == .client || !studentNumber.isEmpty)
     }
@@ -141,7 +107,7 @@ struct SignUpView: View {
         do {
             try await supabase.signUp(
                 name: name,
-                universityEmail: universityEmail,
+                universityEmail: trimmedEmail,
                 studentNumber: role == .buddy ? studentNumber : nil,
                 contactNumber: contactNumber,
                 password: password,

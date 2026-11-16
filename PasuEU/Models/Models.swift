@@ -171,12 +171,14 @@ struct Message: Identifiable, Codable {
     var senderId: UUID
     var text: String
     var sentAt: Date = Date()
+    var readAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, text
         case conversationId = "conversation_id"
         case senderId = "sender_id"
         case sentAt = "sent_at"
+        case readAt = "read_at"
     }
 }
 

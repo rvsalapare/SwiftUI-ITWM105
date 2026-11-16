@@ -33,7 +33,7 @@ struct NewRequestView: View {
     @State private var pages = 1
     @State private var copies = 1
     @State private var pageSize = "A4"
-    @State private var colorOption = "Black & White"
+    @State private var colorOption = FeeRates.blackAndWhiteOption
 
     @State private var paymentMethod: PaymentMethod = .cash
     @State private var gcashNumber = ""
@@ -46,9 +46,10 @@ struct NewRequestView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
-    private let serviceFee: Double = 50
-    private let deliveryFee: Double = 20
-    private var total: Double { serviceFee + deliveryFee }
+    private var estimate: FeeEstimate {
+        FeeRates.estimate(type: type, isUrgent: isUrgent, pages: pages,
+                          copies: copies, colorOption: colorOption)
+    }
 
     var body: some View {
         NavigationStack {
@@ -62,6 +63,8 @@ struct NewRequestView: View {
                         case .payment: paymentSection
                         case .confirmation: confirmationSection
                         }
+
+                        feeEstimateCard
 
                         if let errorMessage {
                             Text(errorMessage).font(.caption).foregroundStyle(.red)
@@ -95,7 +98,7 @@ struct NewRequestView: View {
             ForEach(RequestStep.allCases, id: \.self) { s in
                 VStack(spacing: 4) {
                     Circle()
-                        .fill(s.rawValue <= step.rawValue ? Color(red: 0.42, green: 0.08, blue: 0.1) : Color(.systemGray4))
+                        .fill(s.rawValue <= step.rawValue ? Theme.brand : Color(.systemGray4))
                         .frame(width: 10, height: 10)
                     Text(s.label)
                         .font(.caption2)
@@ -103,7 +106,7 @@ struct NewRequestView: View {
                 }
                 if s != .confirmation {
                     Rectangle()
-                        .fill(s.rawValue < step.rawValue ? Color(red: 0.42, green: 0.08, blue: 0.1) : Color(.systemGray4))
+                        .fill(s.rawValue < step.rawValue ? Theme.brand : Color(.systemGray4))
                         .frame(height: 2)
                         .offset(y: -8)
                 }
@@ -117,7 +120,7 @@ struct NewRequestView: View {
         VStack(alignment: .leading, spacing: 14) {
             Label(type.displayName, systemImage: type.iconName)
                 .font(.headline)
-                .foregroundStyle(Color(red: 0.42, green: 0.08, blue: 0.1))
+                .foregroundStyle(Theme.brand)
 
             if type == .paprint {
                 fieldLabel("Attach your file")
@@ -139,7 +142,8 @@ struct NewRequestView: View {
                 }
                 .pickerStyle(.segmented)
                 Picker("Color", selection: $colorOption) {
-                    Text("Black & White").tag("Black & White"); Text("Colored").tag("Colored")
+                    Text("Black & White").tag(FeeRates.blackAndWhiteOption)
+                    Text("Colored").tag(FeeRates.coloredOption)
                 }
                 .pickerStyle(.segmented)
             } else {
@@ -219,22 +223,65 @@ struct NewRequestView: View {
                     .textFieldStyle(.roundedBorder)
             }
 
-            Divider().padding(.vertical, 4)
-
-            HStack { Text("Service Fee"); Spacer(); Text("₱\(serviceFee, specifier: "%.2f")") }
-                .font(.subheadline)
-            HStack { Text("Delivery Fee"); Spacer(); Text("₱\(deliveryFee, specifier: "%.2f")") }
-                .font(.subheadline)
-            HStack { Text("Total").bold(); Spacer(); Text("₱\(total, specifier: "%.2f")").bold() }
         }
         .cardStyle()
+    }
+
+    private var feeEstimateCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Estimated fees", systemImage: "pesosign.circle.fill")
+                .font(.headline)
+                .foregroundStyle(Theme.brand)
+
+            feeRow("Service fee", estimate.baseServiceFee)
+            if estimate.urgentSurcharge > 0 {
+                feeRow("Urgent surcharge", estimate.urgentSurcharge)
+            }
+            if estimate.deliveryFee > 0 {
+                feeRow("Delivery fee", estimate.deliveryFee)
+            }
+            if type == .paprint {
+                feeRow(
+                    "Print cost",
+                    estimate.printCost,
+                    detail: "\(pages) \(pages == 1 ? "page" : "pages") × \(copies) \(copies == 1 ? "copy" : "copies") × \(peso(FeeRates.printRate(for: colorOption)))"
+                )
+            }
+
+            Divider()
+
+            HStack {
+                Text("Total").bold()
+                Spacer()
+                Text(peso(estimate.total)).bold()
+            }
+        }
+        .cardStyle()
+    }
+
+    private func feeRow(_ label: String, _ amount: Double, detail: String? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                if let detail {
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Text(peso(amount))
+        }
+        .font(.subheadline)
+    }
+
+    private func peso(_ amount: Double) -> String {
+        String(format: "₱%.2f", amount)
     }
 
     private var confirmationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Review your request", systemImage: "checkmark.seal.fill")
                 .font(.headline)
-                .foregroundStyle(Color(red: 0.42, green: 0.08, blue: 0.1))
+                .foregroundStyle(Theme.brand)
 
             summaryRow("Service", type.displayName)
             if !itemDescription.isEmpty { summaryRow("Item", itemDescription) }
@@ -243,7 +290,7 @@ struct NewRequestView: View {
             summaryRow("Meeting place", meetingPlace)
             if !destination.isEmpty { summaryRow("Destination", destination) }
             summaryRow("Payment", paymentLabel)
-            summaryRow("Total", "₱\(String(format: "%.2f", total))")
+            summaryRow("Total", peso(estimate.total))
             if isUrgent { Label("Marked as urgent", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
         }
         .cardStyle()
@@ -286,7 +333,7 @@ struct NewRequestView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
+            .tint(Theme.brand)
             .disabled(!canProceed || isSubmitting)
         }
         .padding()
@@ -329,6 +376,7 @@ struct NewRequestView: View {
         guard let clientId = supabase.currentUser?.id else { return }
         isSubmitting = true
         errorMessage = nil
+        let fees = estimate
 
         var request = ServiceRequest(
             clientId: clientId,
@@ -344,9 +392,9 @@ struct NewRequestView: View {
             pageSize: type == .paprint ? pageSize : nil,
             colorOption: type == .paprint ? colorOption : nil,
             paymentMethod: paymentMethod,
-            serviceFee: serviceFee,
-            deliveryFee: deliveryFee,
-            totalAmount: total
+            serviceFee: fees.serviceFee,
+            deliveryFee: fees.deliveryFee,
+            totalAmount: fees.total
         )
 
         do {
@@ -376,7 +424,7 @@ private extension View {
         self
             .padding()
             .background(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
     }
 }
 

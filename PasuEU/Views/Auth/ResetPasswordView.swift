@@ -16,7 +16,7 @@ struct ResetPasswordView: View {
         VStack(spacing: 20) {
             Image(systemName: "checkmark.shield.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(Color(red: 0.42, green: 0.08, blue: 0.1))
+                .foregroundStyle(Theme.brand)
                 .padding(.top, 40)
 
             Text("Reset Password")
@@ -46,7 +46,7 @@ struct ResetPasswordView: View {
                 if isSaving { ProgressView().tint(.white) } else { Text("Save New Password").frame(maxWidth: .infinity) }
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
+            .tint(Theme.brand)
             .padding(.horizontal)
             .disabled(!isValid || isSaving || didSucceed)
 

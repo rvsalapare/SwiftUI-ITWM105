@@ -1,28 +1,79 @@
 import SwiftUI
 
+private struct HistorySection: Identifiable {
+    let id: String
+    let title: String
+    var requests: [ServiceRequest]
+}
+
 struct RequestHistoryView: View {
     @EnvironmentObject var supabase: SupabaseManager
     @State private var requests: [ServiceRequest] = []
+    @State private var loadFailed = false
+    @State private var subscription: DataSubscription?
+    @State private var filter: HistoryFilter = .all
 
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
+    private var visibleRequests: [ServiceRequest] {
+        requests.filter { filter.includes($0.status) }
+    }
+
+    private var sections: [HistorySection] {
+        let calendar = Calendar.current
+        var result: [HistorySection] = []
+        for request in visibleRequests.sorted(by: { $0.createdAt > $1.createdAt }) {
+            let (key, title) = sectionInfo(for: request.createdAt, calendar: calendar)
+            if let index = result.firstIndex(where: { $0.id == key }) {
+                result[index].requests.append(request)
+            } else {
+                result.append(HistorySection(id: key, title: title, requests: [request]))
+            }
+        }
+        return result
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    hero
+                    ScreenHeader("Transactions")
 
-                    VStack(spacing: 12) {
-                        if requests.isEmpty {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if requests.isEmpty && loadFailed {
+                            EmptyStateView(
+                                icon: "wifi.exclamationmark",
+                                title: "Couldn't load your transactions",
+                                message: "Check your connection and try again.",
+                                retry: { attachListener() }
+                            )
+                        } else if requests.isEmpty {
                             emptyState
                         } else {
-                            ForEach(requests) { request in
-                                NavigationLink {
-                                    RequestDetailView(request: request)
-                                } label: {
-                                    row(for: request)
+                            filterChips
+
+                            if visibleRequests.isEmpty {
+                                EmptyStateView(
+                                    icon: "line.3.horizontal.decrease.circle",
+                                    title: "No \(filter.rawValue.lowercased()) transactions",
+                                    message: filter.emptyMessage
+                                )
+                            }
+
+                            ForEach(sections) { section in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(section.title.uppercased())
+                                        .font(.caption.bold())
+                                        .foregroundStyle(.secondary)
+                                        .padding(.leading, 4)
+
+                                    ForEach(section.requests) { request in
+                                        NavigationLink {
+                                            RequestDetailView(request: request)
+                                        } label: {
+                                            row(for: request)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -33,42 +84,63 @@ struct RequestHistoryView: View {
             .background(Color(.systemGroupedBackground))
             .ignoresSafeArea(edges: .top)
             .task { attachListener() }
+            .onChange(of: supabase.currentUser?.id) {
+                attachListener()
+            }
+            .onDisappear {
+                subscription?.remove()
+                subscription = nil
+            }
         }
     }
 
-    private var hero: some View {
-        ZStack {
-            LinearGradient(
-                colors: [brand, Color(red: 0.24, green: 0.04, blue: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            VStack {
-                Text("Transactions")
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-                    .padding(.top, 60)
-                Spacer()
+    private var filterChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(HistoryFilter.allCases) { option in
+                    Button {
+                        filter = option
+                    } label: {
+                        Text(option.rawValue)
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(filter == option ? Theme.brand : Color(.secondarySystemGroupedBackground))
+                            .foregroundStyle(filter == option ? Color.white : Color.primary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(filter == option ? .isSelected : [])
+                }
             }
         }
-        .frame(height: 120)
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32))
     }
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "list.bullet.rectangle")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("No transactions yet")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text("Requests you create will show up here once submitted.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        EmptyStateView(
+            icon: "list.bullet.rectangle",
+            title: "No transactions yet",
+            message: "Requests you create will show up here once submitted."
+        )
+    }
+
+    private func isEarning(_ request: ServiceRequest) -> Bool {
+        guard let uid = supabase.currentUser?.id else { return false }
+        return supabase.currentUser?.role == .buddy
+            && request.buddyId == uid
+            && request.status == .completed
+    }
+
+    private func peso(_ amount: Double) -> String {
+        String(format: "₱%.2f", amount)
+    }
+
+    private func sectionInfo(for date: Date, calendar: Calendar) -> (String, String) {
+        if calendar.isDateInToday(date) { return ("today", "Today") }
+        if calendar.isDateInYesterday(date) { return ("yesterday", "Yesterday") }
+        let parts = calendar.dateComponents([.year, .month], from: date)
+        let key = "\(parts.year ?? 0)-\(parts.month ?? 0)"
+        return (key, date.formatted(.dateTime.month(.wide).year()))
     }
 
     private func row(for request: ServiceRequest) -> some View {
@@ -76,7 +148,7 @@ struct RequestHistoryView: View {
             Image(systemName: request.type.iconName)
                 .foregroundStyle(.white)
                 .frame(width: 40, height: 40)
-                .background(brand)
+                .background(Theme.brand)
                 .clipShape(Circle())
 
             VStack(alignment: .leading, spacing: 3) {
@@ -86,11 +158,24 @@ struct RequestHistoryView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            statusPill(for: request.status)
+            VStack(alignment: .trailing, spacing: 4) {
+                if isEarning(request) {
+                    Text("+\(peso(request.totalAmount))")
+                        .font(.subheadline.bold())
+                        .foregroundStyle(.green)
+                    Text("Earned")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(peso(request.totalAmount))
+                        .font(.subheadline.bold())
+                }
+                statusPill(for: request.status)
+            }
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius))
     }
 
     private func statusPill(for status: RequestStatus) -> some View {
@@ -124,9 +209,18 @@ struct RequestHistoryView: View {
 
     private func attachListener() {
         guard let uid = supabase.currentUser?.id else { return }
-        _ = supabase.listenToMyRequests(userId: uid) { requests in
-            self.requests = requests
-        }
+        subscription?.remove()
+        loadFailed = false
+        subscription = supabase.listenToMyRequests(
+            userId: uid,
+            onChange: { requests in
+                self.requests = requests
+                loadFailed = false
+            },
+            onError: { _ in
+                loadFailed = true
+            }
+        )
     }
 }
 

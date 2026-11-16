@@ -21,7 +21,7 @@ struct OTPVerificationView: View {
         VStack(spacing: 24) {
             Image(systemName: "envelope.badge.shield.half.filled")
                 .font(.system(size: 48))
-                .foregroundStyle(Color(red: 0.42, green: 0.08, blue: 0.1))
+                .foregroundStyle(Theme.brand)
                 .padding(.top, 40)
 
             Text("Verify Your Email")
@@ -60,7 +60,7 @@ struct OTPVerificationView: View {
                 if isVerifying { ProgressView().tint(.white) } else { Text("Verify").frame(maxWidth: .infinity) }
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
+            .tint(Theme.brand)
             .padding(.horizontal)
             .disabled(digits.contains("") || isVerifying)
 

@@ -1,27 +1,27 @@
 import SwiftUI
 
-private struct ConversationRow: Identifiable {
-    let conversation: Conversation
-    let otherUser: AppUser
-    var id: UUID { conversation.id }
-}
-
 struct ConversationListView: View {
     @EnvironmentObject var supabase: SupabaseManager
 
     @State private var rows: [ConversationRow] = []
     @State private var subscription: DataSubscription?
-
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
+    @State private var loadFailed = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    hero
+                    ScreenHeader("Messages")
 
                     VStack(spacing: 12) {
-                        if rows.isEmpty {
+                        if rows.isEmpty && loadFailed {
+                            EmptyStateView(
+                                icon: "wifi.exclamationmark",
+                                title: "Couldn't load your messages",
+                                message: "Check your connection and try again.",
+                                retry: { attachListener() }
+                            )
+                        } else if rows.isEmpty {
                             emptyState
                         } else {
                             ForEach(rows) { row in
@@ -45,39 +45,12 @@ struct ConversationListView: View {
         }
     }
 
-    private var hero: some View {
-        ZStack {
-            LinearGradient(
-                colors: [brand, Color(red: 0.24, green: 0.04, blue: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            VStack {
-                Text("Messages")
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-                    .padding(.top, 60)
-                Spacer()
-            }
-        }
-        .frame(height: 120)
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32))
-    }
-
     private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "message")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-            Text("No messages yet")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text("Start a conversation from an active request to see it here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+        EmptyStateView(
+            icon: "message",
+            title: "No messages yet",
+            message: "Start a conversation from an active request to see it here."
+        )
     }
 
     private func conversationRow(_ row: ConversationRow) -> some View {
@@ -86,41 +59,72 @@ struct ConversationListView: View {
                 .font(.title2)
                 .foregroundStyle(.white)
                 .frame(width: 44, height: 44)
-                .background(brand)
+                .background(Theme.brand)
                 .clipShape(Circle())
 
+            let isUnread = row.unreadCount > 0
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.otherUser.name).font(.subheadline.bold())
+                Text(row.otherUser.name)
+                    .font(.subheadline.weight(isUnread ? .bold : .semibold))
                 Text(row.conversation.lastMessage ?? "Say hello!")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(isUnread ? .bold : .regular))
+                    .foregroundStyle(isUnread ? .primary : .secondary)
                     .lineLimit(1)
             }
             Spacer()
+            if isUnread {
+                Text(row.unreadCount > 99 ? "99+" : "\(row.unreadCount)")
+                    .font(.caption2.bold())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .frame(minWidth: 20)
+                    .background(Theme.brand)
+                    .clipShape(Capsule())
+                    .accessibilityLabel("\(row.unreadCount) unread")
+            }
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
         .padding(12)
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius))
     }
 
     private func attachListener() {
         guard let uid = supabase.currentUser?.id else { return }
-        subscription = supabase.listenToConversations(userId: uid) { conversations in
-            Task { await hydrate(conversations, currentUserId: uid) }
-        }
+        subscription?.remove()
+        loadFailed = false
+        subscription = supabase.listenToConversations(
+            userId: uid,
+            onChange: { conversations in
+                Task { await hydrate(conversations, currentUserId: uid) }
+            },
+            onError: { _ in
+                loadFailed = true
+            }
+        )
     }
 
     private func hydrate(_ conversations: [Conversation], currentUserId: UUID) async {
+        let counts = (try? await supabase.unreadCounts(
+            userId: currentUserId,
+            conversationIds: conversations.map(\.id)
+        )) ?? [:]
         var result: [ConversationRow] = []
         for conversation in conversations {
             guard let otherId = conversation.participantIds.first(where: { $0 != currentUserId }),
                   let otherUser = try? await supabase.fetchUser(id: otherId) else { continue }
-            result.append(ConversationRow(conversation: conversation, otherUser: otherUser))
+            result.append(ConversationRow(
+                conversation: conversation,
+                otherUser: otherUser,
+                unreadCount: counts[conversation.id] ?? 0
+            ))
         }
         rows = result
+        loadFailed = false
     }
 }
 

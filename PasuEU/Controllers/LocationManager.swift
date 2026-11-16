@@ -12,12 +12,28 @@ final class LocationManager: NSObject, ObservableObject, CLLocationManagerDelega
     @Published var currentLocation: CLLocationCoordinate2D?
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
 
-    var broadcastingUID: UUID?
+    private(set) var broadcastingUID: UUID?
 
     private override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 10
+    }
+
+    func updateBroadcast(uid: UUID?, status: RequestStatus) {
+        guard let uid, status == .accepted || status == .inProgress else {
+            broadcastingUID = nil
+            return
+        }
+        broadcastingUID = uid
+        if let coordinate = currentLocation {
+            Task { try? await SupabaseManager.shared.updateLiveLocation(uid: uid, coordinate: coordinate) }
+        }
+    }
+
+    func stopBroadcasting() {
+        broadcastingUID = nil
     }
 
     func requestPermission() {

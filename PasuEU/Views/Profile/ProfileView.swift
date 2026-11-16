@@ -18,8 +18,6 @@ struct ProfileView: View {
         "pawprint.circle.fill", "gamecontroller.fill", "paintpalette.fill"
     ]
 
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
-
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -34,18 +32,10 @@ struct ProfileView: View {
                             actionButtons
                         } else {
                             readOnlyDetails
-                            Button {
+                            PrimaryButton("Edit Profile", systemImage: "pencil") {
                                 loadEditableFields()
                                 isEditing = true
-                            } label: {
-                                Label("Edit Profile", systemImage: "pencil")
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity)
                             }
-                            .padding()
-                            .background(brand)
-                            .foregroundStyle(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
 
                         if let errorMessage {
@@ -71,12 +61,9 @@ struct ProfileView: View {
 
     private var hero: some View {
         ZStack {
-            LinearGradient(
-                colors: [brand, Color(red: 0.24, green: 0.04, blue: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            .frame(height: 150)
-            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32))
+            Theme.brandGradient
+                .frame(height: 150)
+                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: Theme.heroRadius, bottomTrailingRadius: Theme.heroRadius))
 
             VStack {
                 Text("Profile")
@@ -103,13 +90,13 @@ struct ProfileView: View {
                 .frame(width: 108, height: 108)
                 .overlay(
                     Circle()
-                        .fill(brand.opacity(0.12))
+                        .fill(Theme.brand.opacity(0.12))
                         .frame(width: 96, height: 96)
                 )
                 .overlay(
                     Image(systemName: selectedIcon)
                         .font(.system(size: 44))
-                        .foregroundStyle(brand)
+                        .foregroundStyle(Theme.brand)
                 )
                 .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
 
@@ -119,7 +106,7 @@ struct ProfileView: View {
                 } label: {
                     Image(systemName: "pencil.circle.fill")
                         .font(.title)
-                        .foregroundStyle(brand, .white)
+                        .foregroundStyle(Theme.brand, .white)
                         .background(Circle().fill(.white))
                 }
             }
@@ -135,8 +122,8 @@ struct ProfileView: View {
                     .font(.caption.bold())
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(brand.opacity(0.1))
-                    .foregroundStyle(brand)
+                    .background(Theme.brand.opacity(0.1))
+                    .foregroundStyle(Theme.brand)
                     .clipShape(Capsule())
 
                 if user.role == .buddy {
@@ -158,8 +145,8 @@ struct ProfileView: View {
                     Image(systemName: icon)
                         .font(.title)
                         .frame(width: 52, height: 52)
-                        .foregroundStyle(selectedIcon == icon ? .white : brand)
-                        .background(selectedIcon == icon ? brand : brand.opacity(0.1))
+                        .foregroundStyle(selectedIcon == icon ? .white : Theme.brand)
+                        .background(selectedIcon == icon ? Theme.brand : Theme.brand.opacity(0.1))
                         .clipShape(Circle())
                         .onTapGesture {
                             selectedIcon = icon
@@ -178,29 +165,17 @@ struct ProfileView: View {
 
     private var editForm: some View {
         VStack(spacing: 12) {
-            fieldRow(icon: "person.fill") {
+            FormFieldRow(icon: "person.fill") {
                 TextField("Name", text: $name)
             }
-            fieldRow(icon: "phone.fill") {
+            FormFieldRow(icon: "phone.fill") {
                 TextField("Contact Number", text: $contactNumber)
                     .keyboardType(.phonePad)
             }
-            fieldRow(icon: "text.quote") {
+            FormFieldRow(icon: "text.quote") {
                 TextField("About Me", text: $aboutMe)
             }
         }
-    }
-
-    private func fieldRow<Content: View>(icon: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(brand)
-                .frame(width: 20)
-            content()
-        }
-        .padding()
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var actionButtons: some View {
@@ -213,7 +188,7 @@ struct ProfileView: View {
             .padding()
             .background(Color(.secondarySystemGroupedBackground))
             .foregroundStyle(.primary)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
 
             Button {
                 Task { await save() }
@@ -226,9 +201,9 @@ struct ProfileView: View {
             }
             .frame(maxWidth: .infinity)
             .padding()
-            .background(brand)
+            .background(Theme.brand)
             .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
             .disabled(isSaving)
         }
     }
@@ -248,7 +223,7 @@ struct ProfileView: View {
     private func detailRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .foregroundStyle(brand)
+                .foregroundStyle(Theme.brand)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label).font(.caption).foregroundStyle(.secondary)
@@ -258,7 +233,7 @@ struct ProfileView: View {
         }
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius))
     }
 
     private func loadEditableFields() {

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AboutView: View {
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
+    private let teamMembers = ["Romina Victoria Salapare"]
 
     private var versionText: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -14,7 +14,7 @@ struct AboutView: View {
             VStack(spacing: 20) {
                 Image(systemName: "figure.walk.circle.fill")
                     .font(.system(size: 72))
-                    .foregroundStyle(.white, brand)
+                    .foregroundStyle(.white, Theme.brand)
                     .padding(.top, 24)
 
                 VStack(spacing: 4) {
@@ -26,15 +26,23 @@ struct AboutView: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal)
 
-                VStack(alignment: .leading, spacing: 12) {
+                Text("Manuel S. Enverga University Foundation")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.brand)
+
+                CardContainer(spacing: 12, fillsWidth: true) {
                     infoRow(icon: "cart.fill", title: "Pabili", detail: "Have something bought for you.")
                     infoRow(icon: "shippingbox.fill", title: "Pahatid", detail: "Have an item delivered to someone.")
                     infoRow(icon: "printer.fill", title: "Paprint", detail: "Upload a file and have it printed.")
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal)
+
+                CardContainer(spacing: 12, fillsWidth: true) {
+                    Text("Team").font(.headline)
+                    ForEach(teamMembers, id: \.self) { member in
+                        memberRow(name: member)
+                    }
+                }
                 .padding(.horizontal)
 
                 Text("Built for ITWM105 with SwiftUI and Supabase.")
@@ -48,10 +56,19 @@ struct AboutView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    private func memberRow(name: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.fill")
+                .foregroundStyle(Theme.brand)
+                .frame(width: 28)
+            Text(name).font(.subheadline)
+        }
+    }
+
     private func infoRow(icon: String, title: String, detail: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .foregroundStyle(brand)
+                .foregroundStyle(Theme.brand)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)

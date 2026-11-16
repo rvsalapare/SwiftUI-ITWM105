@@ -13,7 +13,7 @@ struct ForgotPasswordView: View {
         VStack(spacing: 20) {
             Image(systemName: "lock.rotation")
                 .font(.system(size: 48))
-                .foregroundStyle(Color(red: 0.42, green: 0.08, blue: 0.1))
+                .foregroundStyle(Theme.brand)
                 .padding(.top, 40)
 
             Text("Forgot Password")
@@ -41,7 +41,7 @@ struct ForgotPasswordView: View {
                 if isSending { ProgressView().tint(.white) } else { Text("Request Password").frame(maxWidth: .infinity) }
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
+            .tint(Theme.brand)
             .padding(.horizontal)
             .disabled(email.isEmpty || isSending)
 

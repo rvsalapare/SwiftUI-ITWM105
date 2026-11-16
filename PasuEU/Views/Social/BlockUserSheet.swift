@@ -38,7 +38,7 @@ struct BlockUserSheet: View {
                     .padding()
                     .background(Color(.secondarySystemGroupedBackground))
                     .foregroundStyle(.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
 
                 Button {
                     Task { await block() }
@@ -49,7 +49,7 @@ struct BlockUserSheet: View {
                 .padding()
                 .background(Color.red.opacity(isBlocking || didBlock ? 0.4 : 1))
                 .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                 .disabled(isBlocking || didBlock)
             }
             .padding(.horizontal)

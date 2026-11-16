@@ -9,16 +9,22 @@ struct RequestDetailView: View {
     @State private var errorMessage: String?
     @State private var showRating = false
     @State private var showReportSheet = false
-
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
+    @State private var showCancelConfirmation = false
+    @State private var buddy: AppUser?
+    @State private var client: AppUser?
+    @State private var subscription: DataSubscription?
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                hero
+                ScreenHeader(request.type.displayName, icon: request.type.iconName, style: .badge) {
+                    statusPill
+                }
 
                 VStack(spacing: 16) {
-                    card {
+                    RequestProgressTracker(status: request.status)
+
+                    CardContainer {
                         detailRow(label: "Meeting place", value: request.meetingPlace)
                         if let item = request.itemDescription {
                             Divider().padding(.leading, 4)
@@ -45,9 +51,9 @@ struct RequestDetailView: View {
                     }
 
                     if request.type == .paprint, let fileName = request.fileName {
-                        card {
+                        CardContainer {
                             HStack {
-                                Image(systemName: "doc.fill").foregroundStyle(brand)
+                                Image(systemName: "doc.fill").foregroundStyle(Theme.brand)
                                 Text(fileName)
                                 Spacer()
                                 if isDownloading {
@@ -55,7 +61,7 @@ struct RequestDetailView: View {
                                 } else {
                                     Button("Download") { Task { await downloadFile() } }
                                         .font(.subheadline.bold())
-                                        .foregroundStyle(brand)
+                                        .foregroundStyle(Theme.brand)
                                 }
                             }
                             Divider().padding(.leading, 4)
@@ -67,15 +73,13 @@ struct RequestDetailView: View {
                         }
                     }
 
+                    FeeBreakdownCard(request: request)
+
+                    peopleSection
+
                     if request.status == .accepted || request.status == .inProgress {
                         navCard(icon: "map.fill", title: "View live location on map") {
                             MapTrackingView(request: request)
-                        }
-                    }
-
-                    if let buddyId = request.buddyId, request.status != .pending {
-                        navCard(icon: "message.fill", title: "Message about this order") {
-                            MessageBuddyLink(buddyId: buddyId)
                         }
                     }
 
@@ -93,13 +97,13 @@ struct RequestDetailView: View {
                         .padding()
                         .background(Color.orange.opacity(0.1))
                         .foregroundStyle(.orange)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                         .sheet(isPresented: $showReportSheet) {
                             ReportProblemLink(userId: buddyId)
                         }
 
                         Button {
-                            Task { await updateStatus(.cancelled) }
+                            showCancelConfirmation = true
                         } label: {
                             Label("Cancel order", systemImage: "xmark.circle")
                                 .font(.headline)
@@ -108,7 +112,7 @@ struct RequestDetailView: View {
                         .padding()
                         .background(Color.red.opacity(0.1))
                         .foregroundStyle(.red)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                     }
 
                     if let errorMessage {
@@ -130,30 +134,118 @@ struct RequestDetailView: View {
         .sheet(isPresented: $showRating) {
             RatingView(request: request)
         }
+        .confirmationDialog(
+            "Are you sure you want to cancel this request?",
+            isPresented: $showCancelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel order", role: .destructive) {
+                Task { await updateStatus(.cancelled) }
+            }
+            Button("Keep order", role: .cancel) {}
+        }
+        .task(id: request.buddyId) {
+            await loadBuddy()
+        }
+        .task(id: request.clientId) {
+            await loadClient()
+        }
+        .onAppear { startListening() }
+        .onDisappear { stopListening() }
     }
 
-    private var hero: some View {
-        ZStack {
-            LinearGradient(
-                colors: [brand, Color(red: 0.24, green: 0.04, blue: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            VStack(spacing: 10) {
-                Image(systemName: request.type.iconName)
-                    .font(.system(size: 32))
-                    .foregroundStyle(.white)
-                    .frame(width: 64, height: 64)
-                    .background(.white.opacity(0.18))
-                    .clipShape(Circle())
-                Text(request.type.displayName)
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
-                statusPill
+    private var showsContactNumbers: Bool {
+        request.status == .accepted || request.status == .inProgress
+    }
+
+    private var otherPersonId: UUID? {
+        guard let me = supabase.currentUser?.id else { return request.buddyId }
+        return me == request.clientId ? request.buddyId : request.clientId
+    }
+
+    private var peopleSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("PEOPLE")
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
+                .padding(.leading, 4)
+
+            if let client {
+                personCard(client, role: "Client", showsRating: false)
             }
-            .padding(.top, 60)
+            if let buddy {
+                personCard(buddy, role: "Errand Buddy", showsRating: true)
+            }
+
+            if request.buddyId != nil, request.status != .pending, let otherPersonId {
+                navCard(icon: "message.fill", title: "Message about this order") {
+                    MessageBuddyLink(buddyId: otherPersonId)
+                }
+            }
         }
-        .frame(height: 190)
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func personCard(_ user: AppUser, role: String, showsRating: Bool) -> some View {
+        CardContainer {
+            HStack(spacing: 12) {
+                Image(systemName: user.profileIconName)
+                    .font(.system(size: 36))
+                    .foregroundStyle(Theme.brand)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(role).font(.caption).foregroundStyle(.secondary)
+                    Text(user.name).font(.headline)
+                    if showsRating {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.fill").foregroundStyle(.yellow)
+                            if user.ratingCount > 0 {
+                                Text(String(format: "%.1f", user.averageRating))
+                                Text("(\(user.ratingCount) \(user.ratingCount == 1 ? "rating" : "ratings"))")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("No ratings yet").foregroundStyle(.secondary)
+                            }
+                        }
+                        .font(.subheadline)
+                    }
+                    if showsContactNumbers {
+                        Label(user.contactNumber, systemImage: "phone.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private func startListening() {
+        guard subscription == nil else { return }
+        subscription = supabase.listenToRequest(id: request.id) { updated in
+            request = updated
+        }
+    }
+
+    private func stopListening() {
+        subscription?.remove()
+        subscription = nil
+    }
+
+    private func loadBuddy() async {
+        guard let buddyId = request.buddyId else {
+            buddy = nil
+            return
+        }
+        buddy = try? await supabase.fetchUser(id: buddyId)
+    }
+
+    private func loadClient() async {
+        if let current = supabase.currentUser, current.id == request.clientId {
+            client = current
+            return
+        }
+        client = try? await supabase.fetchUser(id: request.clientId)
     }
 
     private var statusPill: some View {
@@ -176,13 +268,6 @@ struct RequestDetailView: View {
         }
     }
 
-    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10, content: content)
-            .padding()
-            .background(Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-
     private func detailRow(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.caption).foregroundStyle(.secondary)
@@ -196,14 +281,14 @@ struct RequestDetailView: View {
             destination()
         } label: {
             HStack(spacing: 10) {
-                Image(systemName: icon).foregroundStyle(brand)
+                Image(systemName: icon).foregroundStyle(Theme.brand)
                 Text(title).foregroundStyle(.primary)
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
             }
             .padding()
             .background(Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius))
         }
     }
 
@@ -211,27 +296,15 @@ struct RequestDetailView: View {
     private var actionButton: some View {
         if let currentUser = supabase.currentUser {
             if currentUser.role == .buddy && request.status == .pending {
-                primaryButton("Accept this request") { Task { await accept() } }
+                PrimaryButton("Accept this request") { Task { await accept() } }
             } else if currentUser.role == .buddy && request.status == .accepted {
-                primaryButton("Mark as In Progress") { Task { await updateStatus(.inProgress) } }
+                PrimaryButton("Mark as In Progress") { Task { await updateStatus(.inProgress) } }
             } else if currentUser.role == .buddy && request.status == .inProgress {
-                primaryButton("Mark as Completed") { Task { await updateStatus(.completed) } }
+                PrimaryButton("Mark as Completed") { Task { await updateStatus(.completed) } }
             } else if currentUser.role == .client && request.status == .completed {
-                primaryButton("Rate this Buddy") { showRating = true }
+                PrimaryButton("Rate this Buddy") { showRating = true }
             }
         }
-    }
-
-    private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-        }
-        .padding()
-        .background(brand)
-        .foregroundStyle(.white)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private func accept() async {

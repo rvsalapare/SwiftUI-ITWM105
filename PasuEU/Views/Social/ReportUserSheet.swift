@@ -20,7 +20,7 @@ struct ReportUserSheet: View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.bubble.fill")
                 .font(.system(size: 40))
-                .foregroundStyle(Color(red: 0.42, green: 0.08, blue: 0.1))
+                .foregroundStyle(Theme.brand)
                 .padding(.top, 28)
 
             Text("Report \(userToReport.name)")
@@ -49,7 +49,7 @@ struct ReportUserSheet: View {
                 if isSubmitting { ProgressView().tint(.white) } else { Text("Confirm").frame(maxWidth: .infinity) }
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
+            .tint(Theme.brand)
             .padding(.horizontal)
             .disabled(isSubmitting || didSubmit)
 

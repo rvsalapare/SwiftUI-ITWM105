@@ -38,9 +38,12 @@ every reusable component (`BlockUserSheet`, `ReportUserSheet`,
 
 ### "Organize the project into separate Swift files according to each file's purpose or functionality."
 
-One `View` struct per `.swift` file, one `.swift` file per screen or
-component — no file contains more than one top-level type. Folders are
-grouped by feature area (`Auth/`, `Requests/`, `Messaging/`, `Social/`,
+Every screen and reusable component is its own `View` struct in its own
+`.swift` file. The models are grouped together in `Models/Models.swift`,
+and `Models/` also holds `FeeRates.swift` and `FeeEstimate.swift`
+(pricing types, each in its own file). A few files keep a small private
+helper type (an enum or struct used only by that view) next to the view
+that uses it. Folders are grouped by feature area (`Auth/`, `Requests/`, `Messaging/`, `Social/`,
 etc.), matching the project structure in `SETUP_GUIDE.md` section 9.
 
 ### "Apply the Model–View–Controller (MVC) architectural pattern."

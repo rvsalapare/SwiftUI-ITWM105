@@ -6,7 +6,7 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(red: 0.42, green: 0.08, blue: 0.1), Color(red: 0.18, green: 0.03, blue: 0.04)],
+                colors: [Theme.brand, Color(red: 0.18, green: 0.03, blue: 0.04)],
                 startPoint: .top, endPoint: .bottom
             )
             .ignoresSafeArea()
@@ -41,8 +41,8 @@ struct SplashView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(.white)
-                        .foregroundStyle(Color(red: 0.42, green: 0.08, blue: 0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(Theme.brand)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                 }
                 .padding(.horizontal, 32)
                 .padding(.bottom, 48)

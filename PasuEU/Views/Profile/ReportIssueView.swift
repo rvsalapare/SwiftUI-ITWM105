@@ -7,8 +7,6 @@ struct ReportIssueView: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
-
     private var trimmedText: String {
         issueText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -32,7 +30,7 @@ struct ReportIssueView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(brand)
+                .tint(Theme.brand)
                 .disabled(trimmedText.isEmpty || isSubmitting)
 
                 Spacer()

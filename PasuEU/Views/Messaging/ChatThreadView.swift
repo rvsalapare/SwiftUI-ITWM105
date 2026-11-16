@@ -12,6 +12,8 @@ struct ChatThreadView: View {
     @State private var subscription: DataSubscription?
     @State private var showBlockSheet = false
     @State private var showReportSheet = false
+    @State private var sendError: String?
+    @State private var isSending = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +35,20 @@ struct ChatThreadView: View {
 
             Divider()
 
+            if let sendError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                    Text(sendError)
+                        .font(.caption)
+                    Spacer()
+                    Button("Dismiss") { self.sendError = nil }
+                        .font(.caption.bold())
+                }
+                .foregroundStyle(.red)
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+
             HStack(spacing: 8) {
                 TextField("Type a message...", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
@@ -41,7 +57,7 @@ struct ChatThreadView: View {
                 } label: {
                     Image(systemName: "paperplane.fill")
                 }
-                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
             }
             .padding()
         }
@@ -73,26 +89,43 @@ struct ChatThreadView: View {
             if isMine { Spacer(minLength: 40) }
             Text(message.text)
                 .padding(10)
-                .background(isMine ? Color(red: 0.42, green: 0.08, blue: 0.1) : Color(.secondarySystemGroupedBackground))
+                .background(isMine ? Theme.brand : Color(.secondarySystemGroupedBackground))
                 .foregroundStyle(isMine ? .white : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
             if !isMine { Spacer(minLength: 40) }
         }
         .id(message.id)
     }
 
     private func attachListener() {
+        let uid = supabase.currentUser?.id
         subscription = supabase.listenToMessages(conversationId: conversation.id) { fetched in
             messages = fetched
+            if let uid, fetched.contains(where: { $0.senderId != uid && $0.readAt == nil }) {
+                markRead(userId: uid)
+            }
+        }
+    }
+
+    private func markRead(userId: UUID) {
+        Task {
+            try? await supabase.markConversationRead(conversationId: conversation.id, userId: userId)
         }
     }
 
     private func send() async {
         guard let uid = supabase.currentUser?.id else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        draft = ""
+        guard !text.isEmpty, !isSending else { return }
+        isSending = true
+        sendError = nil
         let message = Message(conversationId: conversation.id, senderId: uid, text: text)
-        try? await supabase.sendMessage(conversationId: conversation.id, message: message)
+        do {
+            try await supabase.sendMessage(conversationId: conversation.id, message: message)
+            draft = ""
+        } catch {
+            sendError = "Message not sent. Check your connection and try again."
+        }
+        isSending = false
     }
 }

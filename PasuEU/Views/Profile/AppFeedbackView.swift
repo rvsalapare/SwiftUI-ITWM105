@@ -30,7 +30,7 @@ struct AppFeedbackView: View {
                     if isSubmitting { ProgressView() } else { Text("Confirm") }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
+                .tint(Theme.brand)
                 .disabled(stars == 0 || isSubmitting)
 
                 Spacer()

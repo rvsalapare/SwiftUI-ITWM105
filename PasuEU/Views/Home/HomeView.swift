@@ -17,6 +17,6 @@ struct HomeView: View {
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
-        .tint(Color(red: 0.42, green: 0.08, blue: 0.1))
+        .tint(Theme.brand)
     }
 }

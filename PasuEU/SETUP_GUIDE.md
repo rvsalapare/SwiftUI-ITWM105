@@ -112,15 +112,7 @@ create table feedback (
   created_at timestamptz not null default now()
 );
 
--- Added for the Block / Report user flow.
-create table blocks (
-  id uuid primary key default gen_random_uuid(),
-  blocker_id uuid not null references users(id) on delete cascade,
-  blocked_id uuid not null references users(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  unique (blocker_id, blocked_id)
-);
-
+-- Added for the Report user flow.
 create table reports (
   id uuid primary key default gen_random_uuid(),
   reporter_id uuid not null references users(id) on delete cascade,
@@ -201,15 +193,8 @@ create policy "Signed-in users can send messages"
 create policy "Users can submit their own feedback"
   on feedback for insert with check (auth.uid() = user_id);
 
--- Blocks & reports: write-only from the client's perspective; you can
--- read back your own block list to filter it out of the UI if you want to.
-alter table blocks enable row level security;
+-- Reports: write-only from the client's perspective.
 alter table reports enable row level security;
-
-create policy "Users can insert their own blocks"
-  on blocks for insert with check (auth.uid() = blocker_id);
-create policy "Users can read their own block list"
-  on blocks for select using (auth.uid() = blocker_id);
 
 create policy "Users can insert their own reports"
   on reports for insert with check (auth.uid() = reporter_id);
@@ -220,7 +205,7 @@ create policy "Users can insert their own reports"
 **Database → Replication** (or **Table Editor** → click a table → toggle
 "Enable Realtime"). Turn this on for: `users`, `requests`, `messages`.
 This is what makes `listenToOpenRequests`, `listenToAvailableBuddies`,
-`listenToBuddyLocation`, and `listenToMessages` in `SupabaseManager.swift`
+`listenToUserLocation`, and `listenToMessages` in `SupabaseManager.swift`
 push live updates instead of you having to manually refresh.
 
 ## 6. Enable Email/Password auth
@@ -289,6 +274,9 @@ PasuEU/
   PasuEUApp.swift                 # @main entry point only
   Models/
     Models.swift                   # AppUser, ServiceRequest, Rating, Message, ...
+    FeeRates.swift                 # every price in pesos and the estimate calculation
+    FeeEstimate.swift              # line amounts and total for a request's fee estimate
+    CampusArea.swift               # campus center, camera span and boundary polygon for the tracking map
   Controllers/
     SupabaseManager.swift          # Auth + Postgrest + Storage + Realtime
     LocationManager.swift          # CoreLocation wrapper, broadcasts via SupabaseManager
@@ -305,32 +293,53 @@ PasuEU/
     Home/
       HomeView.swift                # TabView shell
       HomeDashboardView.swift       # dashboard content (Home tab)
+      ServiceCard.swift             # tappable Pabili / Pahatid / Paprint card on the client Home tab
+      ActiveRequestBanner.swift     # banner for the user's most recent pending, accepted or in-progress request
     Requests/
       NewRequestView.swift          # Service → Payment → Confirmation stepper
       RequestDetailView.swift       # accept / progress / complete / report / cancel
       RequestHistoryView.swift      # "Transactions" tab
+      RequestProgressTracker.swift  # Pending → Accepted → In progress → Completed step tracker (or Cancelled)
+      FeeBreakdownCard.swift        # service fee, delivery fee, print cost, total and payment method
+      HistoryFilter.swift           # All / Active / Completed / Cancelled filter for the Transactions tab
+      ShareSheet.swift              # UIActivityViewController wrapper for sharing a downloaded Paprint file
     Map/
-      MapTrackingView.swift         # MapKit live buddy tracking
+      MapTrackingView.swift         # MapKit live tracking of buddy and client with walking route
+      TrackingInfoCard.swift        # bottom card: other person's name, distance, ETA
     Rating/
       RatingView.swift              # per-request star rating
     Messaging/
       ConversationListView.swift
+      ConversationRow.swift         # row model: a conversation, the other user and the unread count
       ChatThreadView.swift
       MessageBuddyLink.swift        # resolves a buddy id into a conversation
     Social/
       BlockUserSheet.swift
       ReportUserSheet.swift
       ReportProblemLink.swift       # resolves a buddy id before reporting
+    Shared/
+      Theme.swift                   # brand colors, gradient, corner radii and spacing constants
+      ScreenHeader.swift            # gradient hero header (bar, centered or badge style)
+      FormFieldRow.swift            # icon + input row used on Login, Sign Up and Profile
+      PrimaryButton.swift           # full-width brand button with loading and disabled states
+      CardContainer.swift           # rounded secondary-grouped-background card
+      EmptyStateView.swift          # reusable icon / title / message / optional "Try again" state
     Profile/
       ProfileView.swift             # SF Symbol icon picker instead of photo
       SettingsView.swift
       AppFeedbackView.swift         # app-wide feedback, separate from per-request rating
+      AboutView.swift               # About screen, pushed from Settings
+      HelpView.swift                # Help screen, pushed from Settings
+      ReportIssueView.swift         # "Report an issue" sheet, writes to issue_reports
 ```
 
-Every file above contains exactly one `View` struct (or, for Controllers,
-one class) — matching the rubric's "each screen or reusable component as
-a separate SwiftUI View structure" and "organize the project into
-separate Swift files" requirements directly.
+Every screen and reusable component is its own `View` struct in its own
+file — matching the rubric's "each screen or reusable component as a
+separate SwiftUI View structure" and "organize the project into separate
+Swift files" requirements directly. Models are grouped in
+`Models/Models.swift`, the pricing types `FeeRates` and `FeeEstimate`
+each have their own file in `Models/`, and a few files keep a small
+private helper type next to the view that uses it.
 
 ## 10. What changed from the Firebase version, if you're comparing
 
@@ -342,9 +351,9 @@ separate Swift files" requirements directly.
 | Rating average | Manual Firestore transaction in Swift | Postgres trigger — Swift just inserts the row |
 | Card required? | Yes, for Storage | No, for anything in this guide |
 
-## 12. Additional tables for messaging, block, and report
+## 12. Additional table for blocking users
 
-Added to support the Chat, Block User, and Report User screens from the Figma prototype:
+Added to support the Block User screen. The `reports` table used by the Report User screen is already created in steps 3 and 4.
 
 ```sql
 create table blocked_users (
@@ -355,16 +364,7 @@ create table blocked_users (
   unique (blocker_id, blocked_id)
 );
 
-create table reports (
-  id uuid primary key default gen_random_uuid(),
-  reporter_id uuid not null references users(id) on delete cascade,
-  reported_id uuid not null references users(id) on delete cascade,
-  reason text not null,
-  created_at timestamptz not null default now()
-);
-
 alter table blocked_users enable row level security;
-alter table reports enable row level security;
 
 create policy "Users can view their own block list"
   on blocked_users for select using (auth.uid() = blocker_id);
@@ -372,9 +372,6 @@ create policy "Users can block others"
   on blocked_users for insert with check (auth.uid() = blocker_id);
 create policy "Users can unblock"
   on blocked_users for delete using (auth.uid() = blocker_id);
-
-create policy "Users can submit their own reports"
-  on reports for insert with check (auth.uid() = reporter_id);
 ```
 
 Also enable Realtime on `conversations` the same way you did for `users`/`requests`/`messages`:
@@ -391,18 +388,21 @@ alter publication supabase_realtime add table conversations;
 | Forgot Password | `Views/Auth/ForgotPasswordView.swift` |
 | Email/OTP Verification | `Views/Auth/OTPVerificationView.swift` |
 | Reset Password | `Views/Auth/ResetPasswordView.swift` |
-| Conversations list | `Views/Chat/ConversationsListView.swift` |
-| Chat thread | `Views/Chat/ChatThreadView.swift` |
-| View another user's profile | `Views/Profile/BuddyProfileView.swift` |
-| Block user confirmation | `Views/Profile/BlockUserView.swift` |
-| Report user | `Views/Profile/ReportUserView.swift` |
-| GCash payment | `Views/Requests/GCashPaymentView.swift` |
-| Credit/Debit card payment | `Views/Requests/CardPaymentView.swift` |
+| Conversations list | `Views/Messaging/ConversationListView.swift` |
+| Chat thread | `Views/Messaging/ChatThreadView.swift` |
+| Open a chat with a buddy (resolves buddy id) | `Views/Messaging/MessageBuddyLink.swift` |
+| Block user confirmation | `Views/Social/BlockUserSheet.swift` |
+| Report user | `Views/Social/ReportUserSheet.swift` |
+| Report a problem with a buddy (resolves buddy id) | `Views/Social/ReportProblemLink.swift` |
+| New request (service, payment incl. GCash/card, confirmation) | `Views/Requests/NewRequestView.swift` |
+| Request detail | `Views/Requests/RequestDetailView.swift` |
+| Request history (Transactions tab) | `Views/Requests/RequestHistoryView.swift` |
+| Share downloaded Paprint file | `Views/Requests/ShareSheet.swift` |
 
 ## 14. Next build steps
 
 1. Fill in your Project URL + anon key in `SupabaseManager.swift` (step 2 above)
-2. Run the Part 12 SQL for `blocked_users` and `reports`
+2. Run the Part 12 SQL for `blocked_users`
 3. Build (⌘B) — expect a few small errors on first pass, that's normal
 4. Test sign-up → check **Authentication → Users** and **Table Editor → users** in the Supabase dashboard to confirm a row appears in both places
 5. Test a Paprint file upload → check **Storage → request-files** for the uploaded file
@@ -446,4 +446,34 @@ alter table issue_reports enable row level security;
 
 create policy "Users can insert their own issue reports"
   on issue_reports for insert with check (auth.uid() = user_id);
+```
+
+## 17. Unread message tracking
+
+Adds a nullable `read_at` column to `messages`. A recipient marks a message read by setting it. Only participants of the conversation who are not the sender may update a message, and column-level privileges limit that update to `read_at` so nobody can edit message text. Run in the SQL Editor:
+
+```sql
+alter table messages add column read_at timestamptz;
+
+revoke update on messages from anon, authenticated;
+grant update (read_at) on messages to authenticated;
+
+create policy "Recipients can mark messages read"
+  on messages for update
+  using (
+    sender_id <> auth.uid()
+    and exists (
+      select 1 from conversations c
+      where c.id = messages.conversation_id
+        and auth.uid() = any(c.participant_ids)
+    )
+  )
+  with check (
+    sender_id <> auth.uid()
+    and exists (
+      select 1 from conversations c
+      where c.id = messages.conversation_id
+        and auth.uid() = any(c.participant_ids)
+    )
+  );
 ```

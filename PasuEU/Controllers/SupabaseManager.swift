@@ -129,21 +129,23 @@ final class SupabaseManager: ObservableObject {
         }
     }
 
-    func listenToAvailableBuddies(onChange: @escaping ([AppUser]) -> Void) -> DataSubscription {
-        Task { await fetchAvailableBuddies(onChange: onChange) }
+    func listenToAvailableBuddies(onChange: @escaping ([AppUser]) -> Void,
+                                  onError: ((Error) -> Void)? = nil) -> DataSubscription {
+        Task { await fetchAvailableBuddies(onChange: onChange, onError: onError) }
 
         let channel = client.realtimeV2.channel("public:users:buddies")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "users")
             try? await channel.subscribeWithError()
             for await _ in changes {
-                await fetchAvailableBuddies(onChange: onChange)
+                await fetchAvailableBuddies(onChange: onChange, onError: onError)
             }
         }
         return DataSubscription(channel: channel, client: client)
     }
 
-    private func fetchAvailableBuddies(onChange: @escaping ([AppUser]) -> Void) async {
+    private func fetchAvailableBuddies(onChange: @escaping ([AppUser]) -> Void,
+                                       onError: ((Error) -> Void)?) async {
         do {
             let buddies: [AppUser] = try await client.from("users")
                 .select()
@@ -153,7 +155,7 @@ final class SupabaseManager: ObservableObject {
                 .value
             onChange(buddies)
         } catch {
-            onChange([])
+            onError?(error)
         }
     }
 
@@ -178,21 +180,23 @@ final class SupabaseManager: ObservableObject {
         try await client.from("requests").insert(request).execute()
     }
 
-    func listenToMyRequests(userId: UUID, onChange: @escaping ([ServiceRequest]) -> Void) -> DataSubscription {
-        Task { await fetchMyRequests(userId: userId, onChange: onChange) }
+    func listenToMyRequests(userId: UUID, onChange: @escaping ([ServiceRequest]) -> Void,
+                            onError: ((Error) -> Void)? = nil) -> DataSubscription {
+        Task { await fetchMyRequests(userId: userId, onChange: onChange, onError: onError) }
 
         let channel = client.realtimeV2.channel("public:requests:mine:\(userId)")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "requests")
             try? await channel.subscribeWithError()
             for await _ in changes {
-                await fetchMyRequests(userId: userId, onChange: onChange)
+                await fetchMyRequests(userId: userId, onChange: onChange, onError: onError)
             }
         }
         return DataSubscription(channel: channel, client: client)
     }
 
-    private func fetchMyRequests(userId: UUID, onChange: @escaping ([ServiceRequest]) -> Void) async {
+    private func fetchMyRequests(userId: UUID, onChange: @escaping ([ServiceRequest]) -> Void,
+                                 onError: ((Error) -> Void)?) async {
         do {
             let requests: [ServiceRequest] = try await client.from("requests")
                 .select()
@@ -202,25 +206,27 @@ final class SupabaseManager: ObservableObject {
                 .value
             onChange(requests)
         } catch {
-            onChange([])
+            onError?(error)
         }
     }
 
-    func listenToOpenRequests(onChange: @escaping ([ServiceRequest]) -> Void) -> DataSubscription {
-        Task { await fetchOpenRequests(onChange: onChange) }
+    func listenToOpenRequests(onChange: @escaping ([ServiceRequest]) -> Void,
+                              onError: ((Error) -> Void)? = nil) -> DataSubscription {
+        Task { await fetchOpenRequests(onChange: onChange, onError: onError) }
 
         let channel = client.realtimeV2.channel("public:requests:open")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "requests")
             try? await channel.subscribeWithError()
             for await _ in changes {
-                await fetchOpenRequests(onChange: onChange)
+                await fetchOpenRequests(onChange: onChange, onError: onError)
             }
         }
         return DataSubscription(channel: channel, client: client)
     }
 
-    private func fetchOpenRequests(onChange: @escaping ([ServiceRequest]) -> Void) async {
+    private func fetchOpenRequests(onChange: @escaping ([ServiceRequest]) -> Void,
+                                   onError: ((Error) -> Void)?) async {
         do {
             let requests: [ServiceRequest] = try await client.from("requests")
                 .select()
@@ -230,8 +236,63 @@ final class SupabaseManager: ObservableObject {
                 .value
             onChange(requests)
         } catch {
-            onChange([])
+            onError?(error)
         }
+    }
+
+    func listenToCompletedJobs(buddyId: UUID, onChange: @escaping ([ServiceRequest]) -> Void,
+                               onError: ((Error) -> Void)? = nil) -> DataSubscription {
+        Task { await fetchCompletedJobs(buddyId: buddyId, onChange: onChange, onError: onError) }
+
+        let channel = client.realtimeV2.channel("public:requests:jobs:\(buddyId)")
+        Task {
+            let changes = channel.postgresChange(AnyAction.self, table: "requests")
+            try? await channel.subscribeWithError()
+            for await _ in changes {
+                await fetchCompletedJobs(buddyId: buddyId, onChange: onChange, onError: onError)
+            }
+        }
+        return DataSubscription(channel: channel, client: client)
+    }
+
+    private func fetchCompletedJobs(buddyId: UUID, onChange: @escaping ([ServiceRequest]) -> Void,
+                                    onError: ((Error) -> Void)?) async {
+        do {
+            let jobs: [ServiceRequest] = try await client.from("requests")
+                .select()
+                .eq("buddy_id", value: buddyId)
+                .eq("status", value: RequestStatus.completed.rawValue)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            onChange(jobs)
+        } catch {
+            onError?(error)
+        }
+    }
+
+    func listenToRequest(id: UUID, onChange: @escaping (ServiceRequest) -> Void) -> DataSubscription {
+        Task { await fetchRequest(id: id, onChange: onChange) }
+
+        let channel = client.realtimeV2.channel("public:requests:single:\(id)")
+        Task {
+            let changes = channel.postgresChange(AnyAction.self, table: "requests")
+            try? await channel.subscribeWithError()
+            for await _ in changes {
+                await fetchRequest(id: id, onChange: onChange)
+            }
+        }
+        return DataSubscription(channel: channel, client: client)
+    }
+
+    private func fetchRequest(id: UUID, onChange: @escaping (ServiceRequest) -> Void) async {
+        guard let request: ServiceRequest = try? await client.from("requests")
+            .select()
+            .eq("id", value: id)
+            .single()
+            .execute()
+            .value else { return }
+        onChange(request)
     }
 
     func acceptRequest(_ requestId: UUID, buddyId: UUID) async throws {
@@ -261,14 +322,21 @@ final class SupabaseManager: ObservableObject {
             .execute()
     }
 
-    func listenToBuddyLocation(buddyId: UUID, onChange: @escaping (CLLocationCoordinate2D?) -> Void) -> DataSubscription {
-        let channel = client.realtimeV2.channel("public:users:location:\(buddyId)")
+    func listenToUserLocation(userId: UUID, onChange: @escaping (CLLocationCoordinate2D?) -> Void) -> DataSubscription {
+        Task {
+            if let user = try? await fetchUser(id: userId),
+               let lat = user.currentLatitude, let lng = user.currentLongitude {
+                onChange(CLLocationCoordinate2D(latitude: lat, longitude: lng))
+            }
+        }
+
+        let channel = client.realtimeV2.channel("public:users:location:\(userId)")
         Task {
             let changes = channel.postgresChange(UpdateAction.self, table: "users")
             try? await channel.subscribeWithError()
             for await change in changes {
                 guard let record = try? change.decodeRecord(as: AppUser.self, decoder: JSONDecoder()),
-                      record.id == buddyId,
+                      record.id == userId,
                       let lat = record.currentLatitude, let lng = record.currentLongitude else { continue }
                 onChange(CLLocationCoordinate2D(latitude: lat, longitude: lng))
             }
@@ -329,37 +397,8 @@ final class SupabaseManager: ObservableObject {
         }
     }
 
-    func getOrCreateConversation(between userA: UUID, and userB: UUID) async throws -> UUID {
-        let existing: [Conversation] = try await client.from("conversations")
-            .select()
-            .contains("participant_ids", value: [userA.uuidString])
-            .execute()
-            .value
-
-        if let match = existing.first(where: { $0.participantIds.contains(userB) }) {
-            return match.id
-        }
-
-        let conversation = Conversation(participantIds: [userA, userB])
-        try await client.from("conversations").insert(conversation).execute()
-        return conversation.id
-    }
-
-    func listenToConversations(for userId: UUID, onChange: @escaping ([Conversation]) -> Void) -> DataSubscription {
-        Task { await fetchConversations(userId: userId, onChange: onChange) }
-
-        let channel = client.realtimeV2.channel("public:conversations:\(userId)")
-        Task {
-            let changes = channel.postgresChange(AnyAction.self, table: "conversations")
-            try? await channel.subscribeWithError()
-            for await _ in changes {
-                await fetchConversations(userId: userId, onChange: onChange)
-            }
-        }
-        return DataSubscription(channel: channel, client: client)
-    }
-
-    private func fetchConversations(userId: UUID, onChange: @escaping ([Conversation]) -> Void) async {
+    private func fetchConversations(userId: UUID, onChange: @escaping ([Conversation]) -> Void,
+                                    onError: ((Error) -> Void)?) async {
         do {
             let conversations: [Conversation] = try await client.from("conversations")
                 .select()
@@ -369,12 +408,8 @@ final class SupabaseManager: ObservableObject {
                 .value
             onChange(conversations)
         } catch {
-            onChange([])
+            onError?(error)
         }
-    }
-
-    func fetchUser(uid: UUID) async throws -> AppUser {
-        try await client.from("users").select().eq("id", value: uid).single().execute().value
     }
 
     func blockUser(blockerId: UUID, blockedId: UUID) async throws {
@@ -416,6 +451,33 @@ final class SupabaseManager: ObservableObject {
             .execute()
     }
 
+    func markConversationRead(conversationId: UUID, userId: UUID) async throws {
+        try await client.from("messages")
+            .update(["read_at": ISO8601DateFormatter().string(from: Date())])
+            .eq("conversation_id", value: conversationId)
+            .neq("sender_id", value: userId)
+            .filter("read_at", operator: "is", value: "null")
+            .execute()
+    }
+
+    func unreadCounts(userId: UUID, conversationIds: [UUID]) async throws -> [UUID: Int] {
+        guard !conversationIds.isEmpty else { return [:] }
+        let rows: [[String: UUID]] = try await client.from("messages")
+            .select("conversation_id")
+            .in("conversation_id", values: conversationIds)
+            .neq("sender_id", value: userId)
+            .filter("read_at", operator: "is", value: "null")
+            .execute()
+            .value
+        var counts: [UUID: Int] = [:]
+        for row in rows {
+            if let id = row["conversation_id"] {
+                counts[id, default: 0] += 1
+            }
+        }
+        return counts
+    }
+
     func getOrCreateConversation(userA: UUID, userB: UUID) async throws -> Conversation {
         let existing: [Conversation] = try await client.from("conversations")
             .select()
@@ -430,15 +492,16 @@ final class SupabaseManager: ObservableObject {
         return new
     }
 
-    func listenToConversations(userId: UUID, onChange: @escaping ([Conversation]) -> Void) -> DataSubscription {
-        Task { await fetchConversations(userId: userId, onChange: onChange) }
+    func listenToConversations(userId: UUID, onChange: @escaping ([Conversation]) -> Void,
+                               onError: ((Error) -> Void)? = nil) -> DataSubscription {
+        Task { await fetchConversations(userId: userId, onChange: onChange, onError: onError) }
 
         let channel = client.realtimeV2.channel("public:conversations:\(userId)")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "conversations")
             try? await channel.subscribeWithError()
             for await _ in changes {
-                await fetchConversations(userId: userId, onChange: onChange)
+                await fetchConversations(userId: userId, onChange: onChange, onError: onError)
             }
         }
         return DataSubscription(channel: channel, client: client)

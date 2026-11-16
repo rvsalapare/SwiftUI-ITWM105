@@ -6,13 +6,11 @@ struct SettingsView: View {
     @State private var showFeedbackSheet = false
     @State private var showReportIssueSheet = false
 
-    private let brand = Color(red: 0.42, green: 0.08, blue: 0.1)
-
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 0) {
-                    hero
+                    ScreenHeader("Settings")
 
                     VStack(alignment: .leading, spacing: 24) {
                         sectionBlock(title: "General") {
@@ -47,7 +45,7 @@ struct SettingsView: View {
                         .padding()
                         .background(Color.red.opacity(0.1))
                         .foregroundStyle(.red)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
                     }
                     .padding(24)
                     .padding(.top, 8)
@@ -64,33 +62,13 @@ struct SettingsView: View {
         }
     }
 
-    private var hero: some View {
-        ZStack {
-            LinearGradient(
-                colors: [brand, Color(red: 0.24, green: 0.04, blue: 0.06)],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            VStack {
-                Text("Settings")
-                    .font(.title2.bold())
-                    .foregroundStyle(.white)
-                    .padding(.top, 60)
-                Spacer()
-            }
-        }
-        .frame(height: 120)
-        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 32, bottomTrailingRadius: 32))
-    }
-
     private func sectionBlock<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
-            VStack(spacing: 0, content: content)
-                .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+            CardContainer(alignment: .center, spacing: 0, padding: 0, content: content)
         }
     }
 
@@ -101,7 +79,7 @@ struct SettingsView: View {
                 Text(title)
             }
         }
-        .tint(brand)
+        .tint(Theme.brand)
         .padding()
     }
 
@@ -133,9 +111,9 @@ struct SettingsView: View {
 
     private func iconBadge(_ icon: String, tint: Color? = nil) -> some View {
         Image(systemName: icon)
-            .foregroundStyle(tint ?? brand)
+            .foregroundStyle(tint ?? Theme.brand)
             .frame(width: 28, height: 28)
-            .background((tint ?? brand).opacity(0.12))
+            .background((tint ?? Theme.brand).opacity(0.12))
             .clipShape(Circle())
     }
 }
