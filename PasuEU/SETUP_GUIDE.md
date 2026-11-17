@@ -300,6 +300,7 @@ PasuEU/
       HomeView.swift                # TabView shell
       HomeDashboardView.swift       # dashboard content (Home tab)
       OrderRow.swift                # open-order row with URGENT and NEW tags (buddy Home tab)
+      OrderBadge.swift              # fixed-size URGENT / NEW capsule used on order rows
       CountPill.swift               # pulsing count pill for the Available Orders header
       ServiceCard.swift             # tappable Pabili / Pahatid / Paprint card on the client Home tab
       ActiveRequestBanner.swift     # banner for the user's most recent pending, accepted or in-progress request
@@ -439,11 +440,13 @@ create policy "Request parties can read request files"
     bucket_id = 'request-files'
     and exists (
       select 1 from public.requests r
-      where r.id::text = (storage.foldername(name))[1]
+      where r.id::text = lower((storage.foldername(name))[1])
         and (r.client_id = auth.uid() or r.buddy_id = auth.uid())
     )
   );
 ```
+
+Swift's `UUID.uuidString` is uppercase while Postgres UUID text is lowercase, so the policy lowercases the folder name before comparing it with `r.id::text`.
 
 A buddy can read the file only after accepting the request, because `buddy_id` is set at that moment.
 
