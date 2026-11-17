@@ -318,7 +318,12 @@ PasuEU/
       RatingView.swift              # per-request star rating
     Messaging/
       ConversationListView.swift
-      ConversationRow.swift         # row model: a conversation, the other user and the unread count
+      ConversationRow.swift         # row model: a conversation and the other user
+      ConversationCard.swift        # conversation list card: avatar, online dot, time, preview, unread badge
+      ChatEntry.swift               # groups messages by sender and day for the chat thread
+      MessageBubble.swift           # chat bubble with tail corner, max width and footer line
+      DateSeparator.swift           # centered Today / Yesterday / date label between days
+      ChatInputBar.swift            # capsule text field and circular send button
       ChatThreadView.swift
       MessageBuddyLink.swift        # resolves a buddy id into a conversation
     Social/

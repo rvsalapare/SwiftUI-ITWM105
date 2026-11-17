@@ -7,6 +7,7 @@ struct ConversationListView: View {
     @State private var subscription: DataSubscription?
     @State private var loadFailed = false
     @State private var hydrateGeneration = 0
+    @State private var searchText = ""
 
     var body: some View {
         NavigationStack {
@@ -29,11 +30,25 @@ struct ConversationListView: View {
                                 OfflineNotice()
                             }
 
-                            ForEach(rows) { row in
+                            FormFieldRow(icon: "magnifyingglass") {
+                                TextField("Search by name", text: $searchText)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                            }
+
+                            if visibleRows.isEmpty {
+                                EmptyStateView(
+                                    icon: "magnifyingglass",
+                                    title: "No results",
+                                    message: "No conversations match \"\(searchText.trimmingCharacters(in: .whitespacesAndNewlines))\"."
+                                )
+                            }
+
+                            ForEach(visibleRows) { row in
                                 NavigationLink {
                                     ChatThreadView(conversation: row.conversation, otherUser: row.otherUser)
                                 } label: {
-                                    conversationRow(row)
+                                    ConversationCard(row: row, unreadCount: supabase.unreadByConversation[row.id] ?? 0)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -58,37 +73,17 @@ struct ConversationListView: View {
         )
     }
 
-    private func conversationRow(_ row: ConversationRow) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: row.otherUser.profileIconName)
-                .font(.title2)
-                .foregroundStyle(.white)
-                .frame(width: 44, height: 44)
-                .background(Theme.brand)
-                .clipShape(Circle())
-
-            let unreadCount = supabase.unreadByConversation[row.id] ?? 0
-            let isUnread = unreadCount > 0
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.otherUser.name)
-                    .font(.subheadline.weight(isUnread ? .bold : .semibold))
-                Text(row.conversation.lastMessage ?? "Say hello!")
-                    .font(.caption.weight(isUnread ? .bold : .regular))
-                    .foregroundStyle(isUnread ? .primary : .secondary)
-                    .lineLimit(1)
+    private var visibleRows: [ConversationRow] {
+        let sorted = rows.sorted { left, right in
+            switch (left.conversation.lastMessageAt, right.conversation.lastMessageAt) {
+            case let (leftDate?, rightDate?): return leftDate > rightDate
+            case (_?, nil): return true
+            default: return false
             }
-            Spacer()
-            if isUnread {
-                UnreadBadge(count: unreadCount)
-            }
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
-        .padding(12)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.fieldRadius))
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return sorted }
+        return sorted.filter { $0.otherUser.name.localizedCaseInsensitiveContains(query) }
     }
 
     private func attachListener() {

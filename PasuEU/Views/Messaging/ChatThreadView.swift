@@ -16,6 +16,10 @@ struct ChatThreadView: View {
     @State private var isSending = false
     @State private var loadFailed = false
 
+    private var latestSentId: UUID? {
+        messages.last(where: { $0.senderId == supabase.currentUser?.id })?.id
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if loadFailed && !messages.isEmpty {
@@ -29,6 +33,13 @@ struct ChatThreadView: View {
                     title: "Couldn't load this conversation",
                     message: "Check your connection and try again.",
                     retry: { attachListener() }
+                )
+                .frame(maxHeight: .infinity)
+            } else if messages.isEmpty {
+                EmptyStateView(
+                    icon: "bubble.left.and.bubble.right",
+                    title: "Say hello to \(otherUser.name)",
+                    message: "Your messages will show up here."
                 )
                 .frame(maxHeight: .infinity)
             } else {
@@ -51,21 +62,16 @@ struct ChatThreadView: View {
                 .padding(.top, 8)
             }
 
-            HStack(spacing: 8) {
-                TextField("Type a message...", text: $draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                Button {
-                    Task { await send() }
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending)
+            ChatInputBar(text: $draft, isSending: isSending) {
+                Task { await send() }
             }
-            .padding()
         }
         .navigationTitle(otherUser.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                headerTitle
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button("Report User", systemImage: "exclamationmark.bubble") { showReportSheet = true }
@@ -85,36 +91,88 @@ struct ChatThreadView: View {
         .onDisappear { subscription?.remove() }
     }
 
-    private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(messages) { message in
-                        bubble(for: message)
-                    }
-                }
-                .padding()
+    private var headerTitle: some View {
+        HStack(spacing: 8) {
+            Image(systemName: otherUser.profileIconName)
+                .font(.subheadline)
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(Theme.brand)
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(otherUser.name)
+                    .font(.subheadline.bold())
+                Text(otherUser.isOnline ? "Online" : "Offline")
+                    .font(.caption2)
+                    .foregroundStyle(otherUser.isOnline ? Color.green : Color.secondary)
             }
-            .onChange(of: messages.count) {
-                if let last = messages.last?.id {
-                    withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+        }
+    }
+
+    private var messageList: some View {
+        GeometryReader { proxy in
+            ScrollViewReader { reader in
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(ChatEntry.build(from: messages)) { entry in
+                            entryView(entry, maxWidth: proxy.size.width * 0.78)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                }
+                .defaultScrollAnchor(.bottom)
+                .scrollDismissesKeyboard(.interactively)
+                .onAppear {
+                    scrollToLatest(reader, animated: false)
+                }
+                .onChange(of: messages.count) { oldCount, _ in
+                    scrollToLatest(reader, animated: oldCount > 0)
                 }
             }
         }
     }
 
-    private func bubble(for message: Message) -> some View {
-        let isMine = message.senderId == supabase.currentUser?.id
-        return HStack {
-            if isMine { Spacer(minLength: 40) }
-            Text(message.text)
-                .padding(10)
-                .background(isMine ? Theme.brand : Color(.secondarySystemGroupedBackground))
-                .foregroundStyle(isMine ? .white : .primary)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
-            if !isMine { Spacer(minLength: 40) }
+    private func entryView(_ entry: ChatEntry, maxWidth: CGFloat) -> some View {
+        let isMine = entry.message.senderId == supabase.currentUser?.id
+        return VStack(spacing: 0) {
+            if let separatorDate = entry.separatorDate {
+                DateSeparator(date: separatorDate)
+            }
+
+            MessageBubble(
+                text: entry.message.text,
+                isMine: isMine,
+                showsTail: entry.isLastInGroup,
+                maxWidth: maxWidth,
+                footer: footer(for: entry, isMine: isMine)
+            )
+            .padding(.top, entry.isFirstInGroup ? 10 : 2)
         }
-        .id(message.id)
+        .id(entry.id)
+    }
+
+    private func footer(for entry: ChatEntry, isMine: Bool) -> String? {
+        guard entry.isLastInGroup else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        var text = formatter.string(from: entry.message.sentAt)
+        if isMine && entry.message.id == latestSentId {
+            text += entry.message.readAt != nil ? " · Seen" : " · Sent"
+        }
+        return text
+    }
+
+    private func scrollToLatest(_ reader: ScrollViewProxy, animated: Bool) {
+        guard let last = messages.last?.id else { return }
+        if animated {
+            withAnimation {
+                reader.scrollTo(last, anchor: .bottom)
+            }
+        } else {
+            reader.scrollTo(last, anchor: .bottom)
+        }
     }
 
     private func attachListener() {
