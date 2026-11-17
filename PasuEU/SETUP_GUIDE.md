@@ -271,15 +271,20 @@ SwiftUI's data-binding style:
 
 ```
 PasuEU/
-  PasuEUApp.swift                 # @main entry point only
+  PasuEUApp.swift                 # @main entry point; creates the SwiftData container
   Models/
     Models.swift                   # AppUser, ServiceRequest, Rating, Message, ...
     FeeRates.swift                 # every price in pesos and the estimate calculation
     FeeEstimate.swift              # line amounts and total for a request's fee estimate
     CampusArea.swift               # campus center, camera span and boundary polygon for the tracking map
+    CachedRequest.swift            # SwiftData copy of a ServiceRequest, owned by the signed-in user
+    CachedUser.swift               # SwiftData copy of an AppUser
+    CachedConversation.swift       # SwiftData copy of a Conversation, owned by the signed-in user
+    CachedMessage.swift            # SwiftData copy of a Message, including readAt
   Controllers/
     SupabaseManager.swift          # Auth + Postgrest + Storage + Realtime
     LocationManager.swift          # CoreLocation wrapper, broadcasts via SupabaseManager
+    LocalStore.swift               # SwiftData cache of requests, conversations, messages and users
   Views/
     RootView.swift                 # Splash → Login/SignUp → Home switch
     Onboarding/
@@ -324,6 +329,7 @@ PasuEU/
       PrimaryButton.swift           # full-width brand button with loading and disabled states
       CardContainer.swift           # rounded secondary-grouped-background card
       EmptyStateView.swift          # reusable icon / title / message / optional "Try again" state
+      OfflineNotice.swift           # small "Offline: showing saved data" notice
     Profile/
       ProfileView.swift             # SF Symbol icon picker instead of photo
       SettingsView.swift
@@ -477,3 +483,16 @@ create policy "Recipients can mark messages read"
     )
   );
 ```
+
+## 18. Local storage with SwiftData
+
+SwiftData keeps a local copy of recent data so the app has something to show when the network is slow or down. Supabase stays the source of truth: every successful fetch overwrites the local copy, and nothing is ever written to Supabase from the cache.
+
+- `Models/CachedRequest.swift`, `Models/CachedUser.swift`, `Models/CachedConversation.swift` and `Models/CachedMessage.swift` are the `@Model` classes. Each has an initializer from its `Codable` struct, an `update(from:)` method and a method that converts back. Cached requests and conversations also carry an `ownerId`, the signed-in user whose cache they belong to. A conversation's participant ids are stored as one comma-separated string.
+- `Controllers/LocalStore.swift` wraps the `ModelContext` with `saveRequests(_:ownerId:)` (upsert, then delete that owner's rows missing from the fresh list), `loadRequests(ownerId:)` (newest first), `saveConversations(_:ownerId:)` and `loadConversations(ownerId:)` (newest first by last message), `saveMessages(_:conversationId:)` (only that conversation's messages are pruned) and `loadMessages(conversationId:)` (oldest first), `saveUser(_:)`, `loadUser(id:)` and `clearAll()`.
+- `PasuEUApp.swift` creates the `ModelContainer` for all four models, attaches it with `.modelContainer`, and hands its context to `LocalStore`.
+- `SupabaseManager` saves the results of `fetchMyRequests`, `fetchOpenRequests`, `fetchCompletedJobs`, `fetchConversations` and `fetchMessages`, saves every profile returned by `fetchUser(id:)` (so conversation names show offline), saves the user after `loadCurrentUser`, falls back to the cached user if that load fails with a network error, and calls `LocalStore.clearAll()` on sign out.
+- `HomeDashboardView`, `RequestHistoryView`, `ConversationListView` and `ChatThreadView` show cached data as soon as they appear, replace it when fresh data arrives, and show "Offline: showing saved data" instead of the failure state when a fetch fails but cached data exists.
+- Sending is unchanged and is not queued: a message sent while offline shows the inline send error and keeps the typed text.
+
+No database setup is needed for this section. SwiftData requires iOS 17 or later.

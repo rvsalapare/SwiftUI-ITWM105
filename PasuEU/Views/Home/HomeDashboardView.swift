@@ -25,6 +25,7 @@ struct HomeDashboardView: View {
     @State private var completedJobs: [ServiceRequest] = []
     @State private var myRequests: [ServiceRequest] = []
     @State private var jobsFailed = false
+    @State private var myRequestsFailed = false
     @State private var jobsSubscription: DataSubscription?
     @State private var myRequestsSubscription: DataSubscription?
     @State private var orderFilter: OrderFilter = .all
@@ -58,6 +59,12 @@ struct HomeDashboardView: View {
         isBuddy ? "Ready for errands?" : "What do you need today?"
     }
 
+    private var showsOfflineNotice: Bool {
+        if myRequestsFailed && !myRequests.isEmpty { return true }
+        guard isBuddy else { return false }
+        return (requestsFailed && !openRequests.isEmpty) || (jobsFailed && !completedJobs.isEmpty)
+    }
+
     private var activeRequest: ServiceRequest? {
         myRequests
             .filter { $0.status == .pending || $0.status == .accepted || $0.status == .inProgress }
@@ -79,6 +86,10 @@ struct HomeDashboardView: View {
                     }
 
                     VStack(alignment: .leading, spacing: Theme.spacingXLarge) {
+                        if showsOfflineNotice {
+                            OfflineNotice()
+                        }
+
                         if let activeRequest {
                             NavigationLink {
                                 RequestDetailView(request: activeRequest)
@@ -113,6 +124,7 @@ struct HomeDashboardView: View {
             isAvailable = supabase.currentUser?.isAvailable ?? false
         }
         .onChange(of: supabase.currentUser?.id) {
+            loadCachedData()
             attachJobsListener()
             attachMyRequestsListener()
         }
@@ -402,7 +414,22 @@ struct HomeDashboardView: View {
         }
     }
 
+    private func loadCachedData() {
+        guard let uid = supabase.currentUser?.id else { return }
+        let cached = LocalStore.shared.loadRequests(ownerId: uid)
+        if myRequests.isEmpty {
+            myRequests = cached.filter { $0.clientId == uid || $0.buddyId == uid }
+        }
+        if openRequests.isEmpty {
+            openRequests = cached.filter { $0.status == .pending }
+        }
+        if completedJobs.isEmpty {
+            completedJobs = cached.filter { $0.status == .completed && $0.buddyId == uid }
+        }
+    }
+
     private func attachListeners() {
+        loadCachedData()
         attachBuddiesListener()
         attachRequestsListener()
         attachJobsListener()
@@ -412,10 +439,18 @@ struct HomeDashboardView: View {
     private func attachMyRequestsListener() {
         myRequestsSubscription?.remove()
         myRequestsSubscription = nil
+        myRequestsFailed = false
         guard let uid = supabase.currentUser?.id else { return }
-        myRequestsSubscription = supabase.listenToMyRequests(userId: uid) { requests in
-            self.myRequests = requests
-        }
+        myRequestsSubscription = supabase.listenToMyRequests(
+            userId: uid,
+            onChange: { requests in
+                self.myRequests = requests
+                myRequestsFailed = false
+            },
+            onError: { _ in
+                myRequestsFailed = true
+            }
+        )
     }
 
     private func attachJobsListener() {

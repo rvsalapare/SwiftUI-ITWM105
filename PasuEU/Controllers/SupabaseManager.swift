@@ -95,6 +95,7 @@ final class SupabaseManager: ObservableObject {
     }
 
     func signOut() throws {
+        LocalStore.shared.clearAll()
         Task { try? await client.auth.signOut() }
         currentUser = nil
         isSignedIn = false
@@ -122,11 +123,21 @@ final class SupabaseManager: ObservableObject {
                 .execute()
                 .value
             self.currentUser = user
+            LocalStore.shared.saveUser(user)
             return user
         } catch {
+            if isNetworkError(error), let cached = LocalStore.shared.loadUser(id: uid) {
+                self.currentUser = cached
+                return cached
+            }
             print("Failed to load user: \(error)")
             return nil
         }
+    }
+
+    private func isNetworkError(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        return (error as NSError).domain == NSURLErrorDomain
     }
 
     func listenToAvailableBuddies(onChange: @escaping ([AppUser]) -> Void,
@@ -204,6 +215,7 @@ final class SupabaseManager: ObservableObject {
                 .order("created_at", ascending: false)
                 .execute()
                 .value
+            LocalStore.shared.saveRequests(requests, ownerId: userId)
             onChange(requests)
         } catch {
             onError?(error)
@@ -234,6 +246,9 @@ final class SupabaseManager: ObservableObject {
                 .order("created_at", ascending: false)
                 .execute()
                 .value
+            if let ownerId = currentUser?.id {
+                LocalStore.shared.saveRequests(requests, ownerId: ownerId, scope: .pending)
+            }
             onChange(requests)
         } catch {
             onError?(error)
@@ -265,6 +280,7 @@ final class SupabaseManager: ObservableObject {
                 .order("created_at", ascending: false)
                 .execute()
                 .value
+            LocalStore.shared.saveRequests(jobs, ownerId: buddyId, scope: .completedJobs)
             onChange(jobs)
         } catch {
             onError?(error)
@@ -369,21 +385,23 @@ final class SupabaseManager: ObservableObject {
             .execute()
     }
 
-    func listenToMessages(conversationId: UUID, onChange: @escaping ([Message]) -> Void) -> DataSubscription {
-        Task { await fetchMessages(conversationId: conversationId, onChange: onChange) }
+    func listenToMessages(conversationId: UUID, onChange: @escaping ([Message]) -> Void,
+                          onError: ((Error) -> Void)? = nil) -> DataSubscription {
+        Task { await fetchMessages(conversationId: conversationId, onChange: onChange, onError: onError) }
 
         let channel = client.realtimeV2.channel("public:messages:\(conversationId)")
         Task {
             let changes = channel.postgresChange(InsertAction.self, table: "messages")
             try? await channel.subscribeWithError()
             for await _ in changes {
-                await fetchMessages(conversationId: conversationId, onChange: onChange)
+                await fetchMessages(conversationId: conversationId, onChange: onChange, onError: onError)
             }
         }
         return DataSubscription(channel: channel, client: client)
     }
 
-    private func fetchMessages(conversationId: UUID, onChange: @escaping ([Message]) -> Void) async {
+    private func fetchMessages(conversationId: UUID, onChange: @escaping ([Message]) -> Void,
+                               onError: ((Error) -> Void)?) async {
         do {
             let messages: [Message] = try await client.from("messages")
                 .select()
@@ -391,9 +409,10 @@ final class SupabaseManager: ObservableObject {
                 .order("sent_at", ascending: true)
                 .execute()
                 .value
+            LocalStore.shared.saveMessages(messages, conversationId: conversationId)
             onChange(messages)
         } catch {
-            onChange([])
+            onError?(error)
         }
     }
 
@@ -406,6 +425,7 @@ final class SupabaseManager: ObservableObject {
                 .order("last_message_at", ascending: false)
                 .execute()
                 .value
+            LocalStore.shared.saveConversations(conversations, ownerId: userId)
             onChange(conversations)
         } catch {
             onError?(error)
@@ -508,12 +528,14 @@ final class SupabaseManager: ObservableObject {
     }
 
     func fetchUser(id: UUID) async throws -> AppUser {
-        try await client.from("users")
+        let user: AppUser = try await client.from("users")
             .select()
             .eq("id", value: id)
             .single()
             .execute()
             .value
+        LocalStore.shared.saveUser(user)
+        return user
     }
 
     func submitFeedback(_ feedback: AppFeedback) async throws {

@@ -24,6 +24,10 @@ struct ConversationListView: View {
                         } else if rows.isEmpty {
                             emptyState
                         } else {
+                            if loadFailed {
+                                OfflineNotice()
+                            }
+
                             ForEach(rows) { row in
                                 NavigationLink {
                                     ChatThreadView(conversation: row.conversation, otherUser: row.otherUser)
@@ -97,6 +101,9 @@ struct ConversationListView: View {
         guard let uid = supabase.currentUser?.id else { return }
         subscription?.remove()
         loadFailed = false
+        if rows.isEmpty {
+            rows = cachedRows(currentUserId: uid)
+        }
         subscription = supabase.listenToConversations(
             userId: uid,
             onChange: { conversations in
@@ -108,6 +115,14 @@ struct ConversationListView: View {
         )
     }
 
+    private func cachedRows(currentUserId: UUID) -> [ConversationRow] {
+        LocalStore.shared.loadConversations(ownerId: currentUserId).compactMap { conversation in
+            guard let otherId = conversation.participantIds.first(where: { $0 != currentUserId }),
+                  let otherUser = LocalStore.shared.loadUser(id: otherId) else { return nil }
+            return ConversationRow(conversation: conversation, otherUser: otherUser, unreadCount: 0)
+        }
+    }
+
     private func hydrate(_ conversations: [Conversation], currentUserId: UUID) async {
         let counts = (try? await supabase.unreadCounts(
             userId: currentUserId,
@@ -115,8 +130,9 @@ struct ConversationListView: View {
         )) ?? [:]
         var result: [ConversationRow] = []
         for conversation in conversations {
-            guard let otherId = conversation.participantIds.first(where: { $0 != currentUserId }),
-                  let otherUser = try? await supabase.fetchUser(id: otherId) else { continue }
+            guard let otherId = conversation.participantIds.first(where: { $0 != currentUserId }) else { continue }
+            let fetched = try? await supabase.fetchUser(id: otherId)
+            guard let otherUser = fetched ?? LocalStore.shared.loadUser(id: otherId) else { continue }
             result.append(ConversationRow(
                 conversation: conversation,
                 otherUser: otherUser,

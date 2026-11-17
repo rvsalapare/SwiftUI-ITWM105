@@ -14,23 +14,25 @@ struct ChatThreadView: View {
     @State private var showReportSheet = false
     @State private var sendError: String?
     @State private var isSending = false
+    @State private var loadFailed = false
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(messages) { message in
-                            bubble(for: message)
-                        }
-                    }
-                    .padding()
-                }
-                .onChange(of: messages.count) {
-                    if let last = messages.last?.id {
-                        withAnimation { proxy.scrollTo(last, anchor: .bottom) }
-                    }
-                }
+            if loadFailed && !messages.isEmpty {
+                OfflineNotice()
+                    .padding(.top, 8)
+            }
+
+            if messages.isEmpty && loadFailed {
+                EmptyStateView(
+                    icon: "wifi.exclamationmark",
+                    title: "Couldn't load this conversation",
+                    message: "Check your connection and try again.",
+                    retry: { attachListener() }
+                )
+                .frame(maxHeight: .infinity)
+            } else {
+                messageList
             }
 
             Divider()
@@ -83,6 +85,24 @@ struct ChatThreadView: View {
         .onDisappear { subscription?.remove() }
     }
 
+    private var messageList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(messages) { message in
+                        bubble(for: message)
+                    }
+                }
+                .padding()
+            }
+            .onChange(of: messages.count) {
+                if let last = messages.last?.id {
+                    withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                }
+            }
+        }
+    }
+
     private func bubble(for message: Message) -> some View {
         let isMine = message.senderId == supabase.currentUser?.id
         return HStack {
@@ -99,12 +119,24 @@ struct ChatThreadView: View {
 
     private func attachListener() {
         let uid = supabase.currentUser?.id
-        subscription = supabase.listenToMessages(conversationId: conversation.id) { fetched in
-            messages = fetched
-            if let uid, fetched.contains(where: { $0.senderId != uid && $0.readAt == nil }) {
-                markRead(userId: uid)
-            }
+        subscription?.remove()
+        loadFailed = false
+        if messages.isEmpty {
+            messages = LocalStore.shared.loadMessages(conversationId: conversation.id)
         }
+        subscription = supabase.listenToMessages(
+            conversationId: conversation.id,
+            onChange: { fetched in
+                messages = fetched
+                loadFailed = false
+                if let uid, fetched.contains(where: { $0.senderId != uid && $0.readAt == nil }) {
+                    markRead(userId: uid)
+                }
+            },
+            onError: { _ in
+                loadFailed = true
+            }
+        )
     }
 
     private func markRead(userId: UUID) {

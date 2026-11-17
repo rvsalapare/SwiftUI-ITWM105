@@ -57,6 +57,14 @@ etc.), matching the project structure in `SETUP_GUIDE.md` section 9.
   business logic — talking to the Supabase backend, wrapping
   CoreLocation. This is the layer that mediates between the Model and
   the View, which is the defining role of a Controller in MVC.
+- **Local storage (SwiftData)** — `Models/CachedRequest.swift`,
+  `Models/CachedUser.swift`, `Models/CachedConversation.swift` and
+  `Models/CachedMessage.swift` are `@Model` classes, and
+  `Controllers/LocalStore.swift` wraps the `ModelContext`. Supabase stays
+  the source of truth; the cache lets the Home, Transactions, Messages and
+  chat screens show saved requests, conversations and messages immediately
+  and keep working with an "Offline: showing saved data" notice when a fetch
+  fails. See `SETUP_GUIDE.md` section 18.
 - **View** — everything under `Views/`. SwiftUI structs are kept
   presentational: they read a Controller's `@Published` state through
   `@EnvironmentObject`/`@StateObject` and call Controller methods in

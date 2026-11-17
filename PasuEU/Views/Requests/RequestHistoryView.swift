@@ -48,6 +48,10 @@ struct RequestHistoryView: View {
                         } else if requests.isEmpty {
                             emptyState
                         } else {
+                            if loadFailed {
+                                OfflineNotice()
+                            }
+
                             filterChips
 
                             if visibleRequests.isEmpty {
@@ -211,6 +215,10 @@ struct RequestHistoryView: View {
         guard let uid = supabase.currentUser?.id else { return }
         subscription?.remove()
         loadFailed = false
+        if requests.isEmpty {
+            requests = LocalStore.shared.loadRequests(ownerId: uid)
+                .filter { $0.clientId == uid || $0.buddyId == uid }
+        }
         subscription = supabase.listenToMyRequests(
             userId: uid,
             onChange: { requests in
