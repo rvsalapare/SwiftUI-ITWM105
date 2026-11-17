@@ -150,9 +150,7 @@ struct MapTrackingView: View {
             refreshRoute()
         }
         .onChange(of: status) { _, newStatus in
-            if newStatus == .accepted || newStatus == .inProgress {
-                syncBroadcast()
-            } else {
+            if newStatus != .accepted && newStatus != .inProgress {
                 tearDown()
             }
         }
@@ -173,14 +171,9 @@ struct MapTrackingView: View {
         guard isActive, let me = supabase.currentUser else { return }
         locationManager.requestPermission()
         locationManager.startUpdating()
-        syncBroadcast()
         observeStatus(userId: me.id)
         observeOtherLocation()
         await loadOtherName()
-    }
-
-    private func syncBroadcast() {
-        locationManager.updateBroadcast(uid: supabase.currentUser?.id, status: status)
     }
 
     private func observeStatus(userId: UUID) {
@@ -282,7 +275,5 @@ struct MapTrackingView: View {
         requestSubscription = nil
         routeTask?.cancel()
         routeTask = nil
-        locationManager.stopBroadcasting()
-        locationManager.stopUpdating()
     }
 }

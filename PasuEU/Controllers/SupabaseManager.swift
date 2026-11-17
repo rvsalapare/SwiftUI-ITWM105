@@ -195,7 +195,7 @@ final class SupabaseManager: ObservableObject {
                             onError: ((Error) -> Void)? = nil) -> DataSubscription {
         Task { await fetchMyRequests(userId: userId, onChange: onChange, onError: onError) }
 
-        let channel = client.realtimeV2.channel("public:requests:mine:\(userId)")
+        let channel = client.realtimeV2.channel("public:requests:mine:\(userId):\(UUID().uuidString)")
         Task {
             let changes = channel.postgresChange(AnyAction.self, table: "requests")
             try? await channel.subscribeWithError()

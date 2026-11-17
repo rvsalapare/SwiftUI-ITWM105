@@ -8,7 +8,7 @@ struct TrackingInfoCard: View {
     let travelTime: TimeInterval?
 
     private var distanceText: String {
-        guard let distance else { return "Locating…" }
+        guard let distance else { return "" }
         return MKDistanceFormatter().string(fromDistance: distance)
     }
 
@@ -32,9 +32,17 @@ struct TrackingInfoCard: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(distanceText).font(.subheadline.bold()).foregroundStyle(Theme.brand)
-                Text(etaText).font(.caption).foregroundStyle(.secondary)
+            if distance == nil {
+                Text("Waiting for \(name)'s location...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 150, alignment: .trailing)
+            } else {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(distanceText).font(.subheadline.bold()).foregroundStyle(Theme.brand)
+                    Text(etaText).font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
         .padding(14)
