@@ -65,6 +65,13 @@ etc.), matching the project structure in `SETUP_GUIDE.md` section 9.
   chat screens show saved requests, conversations and messages immediately
   and keep working with an "Offline: showing saved data" notice when a fetch
   fails. See `SETUP_GUIDE.md` section 18.
+- **Notifications** — `Models/AppNotification.swift` (with a computed
+  `kind`), `Views/Notifications/NotificationsView.swift` and
+  `NotificationRow.swift`. `SupabaseManager` fetches the latest 50
+  notifications, keeps them live through Realtime, and marks them read; rows
+  are created by database triggers and the app never inserts. A bell button
+  with an unread badge on the Home header opens the list, and tapping a row
+  opens its request or chat. See `SETUP_GUIDE.md` section 19.
 - **View** — everything under `Views/`. SwiftUI structs are kept
   presentational: they read a Controller's `@Published` state through
   `@EnvironmentObject`/`@StateObject` and call Controller methods in

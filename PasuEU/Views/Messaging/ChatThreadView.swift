@@ -124,6 +124,9 @@ struct ChatThreadView: View {
         if messages.isEmpty {
             messages = LocalStore.shared.loadMessages(conversationId: conversation.id)
         }
+        if let uid {
+            markRead(userId: uid)
+        }
         subscription = supabase.listenToMessages(
             conversationId: conversation.id,
             onChange: { fetched in

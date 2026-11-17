@@ -32,6 +32,25 @@ final class SupabaseManager: ObservableObject {
 
     @Published var currentUser: AppUser?
     @Published var isSignedIn: Bool = false
+    @Published private(set) var unreadMessageCount = 0
+    @Published private(set) var unreadByConversation: [UUID: Int] = [:]
+    @Published private(set) var notifications: [AppNotification] = []
+
+    var unreadNotificationCount: Int {
+        notifications.filter { !$0.isRead }.count
+    }
+
+    private var notificationUserId: UUID?
+    private var notificationSession: UUID?
+    private var notificationSubscription: DataSubscription?
+    private var notificationRefreshTask: Task<Void, Never>?
+    private var notificationGeneration = 0
+
+    private var unreadUserId: UUID?
+    private var unreadSession: UUID?
+    private var unreadSubscriptions: [DataSubscription] = []
+    private var unreadRefreshTask: Task<Void, Never>?
+    private var unreadRefreshGeneration = 0
 
     private init() {
 
@@ -95,6 +114,8 @@ final class SupabaseManager: ObservableObject {
     }
 
     func signOut() throws {
+        stopUnreadTracking()
+        stopNotificationTracking()
         LocalStore.shared.clearAll()
         Task { try? await client.auth.signOut() }
         currentUser = nil
@@ -472,12 +493,210 @@ final class SupabaseManager: ObservableObject {
     }
 
     func markConversationRead(conversationId: UUID, userId: UUID) async throws {
-        try await client.from("messages")
-            .update(["read_at": ISO8601DateFormatter().string(from: Date())])
-            .eq("conversation_id", value: conversationId)
-            .neq("sender_id", value: userId)
-            .filter("read_at", operator: "is", value: "null")
+        clearUnreadLocally(for: conversationId)
+        do {
+            try await client.from("messages")
+                .update(["read_at": ISO8601DateFormatter().string(from: Date())])
+                .eq("conversation_id", value: conversationId)
+                .neq("sender_id", value: userId)
+                .filter("read_at", operator: "is", value: "null")
+                .execute()
+        } catch {
+            await refreshUnreadCount()
+            throw error
+        }
+        await refreshUnreadCount()
+    }
+
+    func startUnreadTracking(userId: UUID) {
+        stopUnreadTracking()
+        let session = UUID()
+        unreadSession = session
+        unreadUserId = userId
+
+        Task { await refreshUnreadCount() }
+
+        for table in ["messages", "conversations"] {
+            let channel = client.realtimeV2.channel("public:\(table):unread:\(userId):\(session.uuidString)")
+            Task {
+                let changes = channel.postgresChange(AnyAction.self, table: table)
+                try? await channel.subscribeWithError()
+                for await _ in changes {
+                    guard unreadSession == session else { break }
+                    scheduleUnreadRefresh()
+                }
+            }
+            unreadSubscriptions.append(DataSubscription(channel: channel, client: client))
+        }
+    }
+
+    func stopUnreadTracking() {
+        unreadSession = nil
+        unreadUserId = nil
+        unreadRefreshTask?.cancel()
+        unreadRefreshTask = nil
+        unreadRefreshGeneration += 1
+        for subscription in unreadSubscriptions {
+            subscription.remove()
+        }
+        unreadSubscriptions = []
+        unreadByConversation = [:]
+        unreadMessageCount = 0
+    }
+
+    func refreshUnreadCount() async {
+        guard let userId = unreadUserId else { return }
+        unreadRefreshGeneration += 1
+        let generation = unreadRefreshGeneration
+        do {
+            let conversations: [Conversation] = try await client.from("conversations")
+                .select()
+                .contains("participant_ids", value: [userId.uuidString])
+                .execute()
+                .value
+            let counts = try await unreadCounts(userId: userId, conversationIds: conversations.map(\.id))
+            guard generation == unreadRefreshGeneration, unreadUserId == userId else { return }
+            unreadByConversation = counts
+            unreadMessageCount = counts.values.reduce(0, +)
+        } catch {
+            return
+        }
+    }
+
+    private func scheduleUnreadRefresh() {
+        unreadRefreshTask?.cancel()
+        unreadRefreshTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await refreshUnreadCount()
+        }
+    }
+
+    func startNotificationTracking(userId: UUID) {
+        stopNotificationTracking()
+        let session = UUID()
+        notificationSession = session
+        notificationUserId = userId
+
+        Task { await refreshNotifications() }
+
+        let channel = client.realtimeV2.channel("public:notifications:\(userId):\(session.uuidString)")
+        Task {
+            let changes = channel.postgresChange(AnyAction.self, table: "notifications")
+            try? await channel.subscribeWithError()
+            for await _ in changes {
+                guard notificationSession == session else { break }
+                scheduleNotificationRefresh()
+            }
+        }
+        notificationSubscription = DataSubscription(channel: channel, client: client)
+    }
+
+    func stopNotificationTracking() {
+        notificationSession = nil
+        notificationUserId = nil
+        notificationRefreshTask?.cancel()
+        notificationRefreshTask = nil
+        notificationGeneration += 1
+        notificationSubscription?.remove()
+        notificationSubscription = nil
+        notifications = []
+    }
+
+    func refreshNotifications() async {
+        guard let userId = notificationUserId else { return }
+        notificationGeneration += 1
+        let generation = notificationGeneration
+        do {
+            let fetched: [AppNotification] = try await client.from("notifications")
+                .select()
+                .eq("user_id", value: userId)
+                .order("created_at", ascending: false)
+                .limit(50)
+                .execute()
+                .value
+            guard generation == notificationGeneration, notificationUserId == userId else { return }
+            notifications = fetched
+        } catch {
+            return
+        }
+    }
+
+    private func scheduleNotificationRefresh() {
+        notificationRefreshTask?.cancel()
+        notificationRefreshTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await refreshNotifications()
+        }
+    }
+
+    func markNotificationRead(id: UUID) async {
+        guard let index = notifications.firstIndex(where: { $0.id == id }),
+              !notifications[index].isRead else { return }
+        notificationGeneration += 1
+        var updated = notifications
+        updated[index].readAt = Date()
+        notifications = updated
+
+        do {
+            try await client.from("notifications")
+                .update(["read_at": ISO8601DateFormatter().string(from: Date())])
+                .eq("id", value: id)
+                .execute()
+        } catch {
+            await refreshNotifications()
+        }
+    }
+
+    func markAllNotificationsRead(userId: UUID) async {
+        guard notifications.contains(where: { !$0.isRead }) else { return }
+        notificationGeneration += 1
+        let now = Date()
+        notifications = notifications.map { notification in
+            var copy = notification
+            if copy.readAt == nil {
+                copy.readAt = now
+            }
+            return copy
+        }
+
+        do {
+            try await client.from("notifications")
+                .update(["read_at": ISO8601DateFormatter().string(from: now)])
+                .eq("user_id", value: userId)
+                .filter("read_at", operator: "is", value: "null")
+                .execute()
+        } catch {
+            await refreshNotifications()
+        }
+    }
+
+    func loadRequest(id: UUID) async throws -> ServiceRequest {
+        try await client.from("requests")
+            .select()
+            .eq("id", value: id)
+            .single()
             .execute()
+            .value
+    }
+
+    func loadConversation(id: UUID) async throws -> Conversation {
+        try await client.from("conversations")
+            .select()
+            .eq("id", value: id)
+            .single()
+            .execute()
+            .value
+    }
+
+    private func clearUnreadLocally(for conversationId: UUID) {
+        unreadRefreshGeneration += 1
+        guard unreadByConversation[conversationId] != nil else { return }
+        var updated = unreadByConversation
+        updated[conversationId] = nil
+        unreadByConversation = updated
+        unreadMessageCount = updated.values.reduce(0, +)
     }
 
     func unreadCounts(userId: UUID, conversationIds: [UUID]) async throws -> [UUID: Int] {

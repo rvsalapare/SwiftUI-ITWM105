@@ -6,6 +6,7 @@ struct ConversationListView: View {
     @State private var rows: [ConversationRow] = []
     @State private var subscription: DataSubscription?
     @State private var loadFailed = false
+    @State private var hydrateGeneration = 0
 
     var body: some View {
         NavigationStack {
@@ -66,7 +67,8 @@ struct ConversationListView: View {
                 .background(Theme.brand)
                 .clipShape(Circle())
 
-            let isUnread = row.unreadCount > 0
+            let unreadCount = supabase.unreadByConversation[row.id] ?? 0
+            let isUnread = unreadCount > 0
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.otherUser.name)
@@ -78,15 +80,7 @@ struct ConversationListView: View {
             }
             Spacer()
             if isUnread {
-                Text(row.unreadCount > 99 ? "99+" : "\(row.unreadCount)")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .frame(minWidth: 20)
-                    .background(Theme.brand)
-                    .clipShape(Capsule())
-                    .accessibilityLabel("\(row.unreadCount) unread")
+                UnreadBadge(count: unreadCount)
             }
             Image(systemName: "chevron.right")
                 .font(.caption)
@@ -119,26 +113,21 @@ struct ConversationListView: View {
         LocalStore.shared.loadConversations(ownerId: currentUserId).compactMap { conversation in
             guard let otherId = conversation.participantIds.first(where: { $0 != currentUserId }),
                   let otherUser = LocalStore.shared.loadUser(id: otherId) else { return nil }
-            return ConversationRow(conversation: conversation, otherUser: otherUser, unreadCount: 0)
+            return ConversationRow(conversation: conversation, otherUser: otherUser)
         }
     }
 
     private func hydrate(_ conversations: [Conversation], currentUserId: UUID) async {
-        let counts = (try? await supabase.unreadCounts(
-            userId: currentUserId,
-            conversationIds: conversations.map(\.id)
-        )) ?? [:]
+        hydrateGeneration += 1
+        let generation = hydrateGeneration
         var result: [ConversationRow] = []
         for conversation in conversations {
             guard let otherId = conversation.participantIds.first(where: { $0 != currentUserId }) else { continue }
             let fetched = try? await supabase.fetchUser(id: otherId)
             guard let otherUser = fetched ?? LocalStore.shared.loadUser(id: otherId) else { continue }
-            result.append(ConversationRow(
-                conversation: conversation,
-                otherUser: otherUser,
-                unreadCount: counts[conversation.id] ?? 0
-            ))
+            result.append(ConversationRow(conversation: conversation, otherUser: otherUser))
         }
+        guard generation == hydrateGeneration else { return }
         rows = result
         loadFailed = false
     }

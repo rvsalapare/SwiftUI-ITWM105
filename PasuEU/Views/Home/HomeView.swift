@@ -10,6 +10,7 @@ struct HomeView: View {
         TabView {
             HomeDashboardView()
                 .tabItem { Label("Home", systemImage: "house.fill") }
+                .badge(unreadBadgeText)
 
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.fill") }
@@ -21,11 +22,43 @@ struct HomeView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
         .tint(Theme.brand)
-        .task { attachLocationSharing() }
+        .task {
+            attachLocationSharing()
+            attachUnreadTracking()
+            attachNotificationTracking()
+        }
         .onChange(of: supabase.currentUser?.id) {
             attachLocationSharing()
+            attachUnreadTracking()
+            attachNotificationTracking()
         }
-        .onDisappear { stopLocationSharing() }
+        .onDisappear {
+            stopLocationSharing()
+            supabase.stopUnreadTracking()
+            supabase.stopNotificationTracking()
+        }
+    }
+
+    private func attachNotificationTracking() {
+        guard let uid = supabase.currentUser?.id else {
+            supabase.stopNotificationTracking()
+            return
+        }
+        supabase.startNotificationTracking(userId: uid)
+    }
+
+    private var unreadBadgeText: String? {
+        let count = supabase.unreadMessageCount
+        guard count > 0 else { return nil }
+        return count > 99 ? "99+" : "\(count)"
+    }
+
+    private func attachUnreadTracking() {
+        guard let uid = supabase.currentUser?.id else {
+            supabase.stopUnreadTracking()
+            return
+        }
+        supabase.startUnreadTracking(userId: uid)
     }
 
     private func attachLocationSharing() {

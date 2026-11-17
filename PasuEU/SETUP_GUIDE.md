@@ -281,6 +281,7 @@ PasuEU/
     CachedUser.swift               # SwiftData copy of an AppUser
     CachedConversation.swift       # SwiftData copy of a Conversation, owned by the signed-in user
     CachedMessage.swift            # SwiftData copy of a Message, including readAt
+    AppNotification.swift          # in-app notification row with a computed kind (symbol and tint)
   Controllers/
     SupabaseManager.swift          # Auth + Postgrest + Storage + Realtime
     LocationManager.swift          # CoreLocation wrapper, broadcasts via SupabaseManager
@@ -298,6 +299,8 @@ PasuEU/
     Home/
       HomeView.swift                # TabView shell
       HomeDashboardView.swift       # dashboard content (Home tab)
+      OrderRow.swift                # open-order row with URGENT and NEW tags (buddy Home tab)
+      CountPill.swift               # pulsing count pill for the Available Orders header
       ServiceCard.swift             # tappable Pabili / Pahatid / Paprint card on the client Home tab
       ActiveRequestBanner.swift     # banner for the user's most recent pending, accepted or in-progress request
     Requests/
@@ -322,6 +325,9 @@ PasuEU/
       BlockUserSheet.swift
       ReportUserSheet.swift
       ReportProblemLink.swift       # resolves a buddy id before reporting
+    Notifications/
+      NotificationsView.swift       # grouped notification list, mark all as read, opens the request or chat
+      NotificationRow.swift         # one notification card with kind icon and unread dot
     Shared/
       Theme.swift                   # brand colors, gradient, corner radii and spacing constants
       ScreenHeader.swift            # gradient hero header (bar, centered or badge style)
@@ -330,6 +336,7 @@ PasuEU/
       CardContainer.swift           # rounded secondary-grouped-background card
       EmptyStateView.swift          # reusable icon / title / message / optional "Try again" state
       OfflineNotice.swift           # small "Offline: showing saved data" notice
+      UnreadBadge.swift             # unread count badge ("99+" above 99)
     Profile/
       ProfileView.swift             # SF Symbol icon picker instead of photo
       SettingsView.swift
@@ -496,3 +503,165 @@ SwiftData keeps a local copy of recent data so the app has something to show whe
 - Sending is unchanged and is not queued: a message sent while offline shows the inline send error and keeps the typed text.
 
 No database setup is needed for this section. SwiftData requires iOS 17 or later.
+
+## 19. In-app notifications
+
+The app shows an in-app notification list (bell button on the Home header). The app only reads `notifications` and sets `read_at`; it never inserts rows. Rows are created by the database triggers further down. Run this in the SQL Editor only if the table does not already exist:
+
+```sql
+create table if not exists notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  type text not null,
+  title text not null,
+  body text,
+  request_id uuid references requests(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete cascade,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists notifications_user_created_idx
+  on notifications (user_id, created_at desc);
+
+alter table notifications enable row level security;
+
+drop policy if exists "Users can read their own notifications" on notifications;
+create policy "Users can read their own notifications"
+  on notifications for select using (auth.uid() = user_id);
+
+drop policy if exists "Users can mark their own notifications read" on notifications;
+create policy "Users can mark their own notifications read"
+  on notifications for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+revoke insert, update, delete on notifications from anon, authenticated;
+grant update (read_at) on notifications to authenticated;
+
+alter publication supabase_realtime add table notifications;
+```
+
+The `revoke` and `grant update (read_at)` lines are what limit clients to changing `read_at` only. If `notifications` is already in the realtime publication, the last statement reports an error that can be ignored.
+
+In the app, `SupabaseManager` fetches the latest 50 rows for the signed-in user, listens to realtime changes on `notifications` and refreshes (debounced, with a generation check so stale results are dropped), and exposes `notifications` and `unreadNotificationCount`. `markNotificationRead(id:)` and `markAllNotificationsRead(userId:)` update the local list first and then the server. Tracking starts and stops in `HomeView`, and `signOut` stops it.
+
+### Triggers that create notifications
+
+These four functions run as the database owner (`security definer`), so they can insert into `notifications` even though clients cannot. They are safe to run again: functions use `create or replace` and each trigger is dropped before it is created.
+
+```sql
+create or replace function notify_new_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into notifications (user_id, type, title, body, request_id)
+  select
+    u.id,
+    'new_request',
+    'New order available',
+    new.meeting_place || case when new.is_urgent then ' (URGENT)' else '' end,
+    new.id
+  from users u
+  where u.role = 'buddy'
+    and u.id <> new.client_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_new_request on requests;
+create trigger trg_notify_new_request
+  after insert on requests
+  for each row execute function notify_new_request();
+
+create or replace function notify_request_update()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  status_title text;
+begin
+  if new.status is not distinct from old.status then
+    return new;
+  end if;
+
+  status_title := case new.status
+    when 'accepted' then 'Your request was accepted'
+    when 'in_progress' then 'Your errand is in progress'
+    when 'completed' then 'Your request is completed'
+    when 'cancelled' then 'Your request was cancelled'
+    else null
+  end;
+
+  if status_title is null then
+    return new;
+  end if;
+
+  insert into notifications (user_id, type, title, body, request_id)
+  values (new.client_id, 'status_' || new.status, status_title, new.meeting_place, new.id);
+
+  if new.status = 'cancelled' and new.buddy_id is not null then
+    insert into notifications (user_id, type, title, body, request_id)
+    values (new.buddy_id, 'status_cancelled', 'A request was cancelled', new.meeting_place, new.id);
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_request_update on requests;
+create trigger trg_notify_request_update
+  after update on requests
+  for each row execute function notify_request_update();
+
+create or replace function notify_new_message()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into notifications (user_id, type, title, body, conversation_id)
+  select
+    participant,
+    'message',
+    'New message',
+    left(new.text, 80),
+    new.conversation_id
+  from conversations c, unnest(c.participant_ids) as participant
+  where c.id = new.conversation_id
+    and participant <> new.sender_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_new_message on messages;
+create trigger trg_notify_new_message
+  after insert on messages
+  for each row execute function notify_new_message();
+
+create or replace function notify_new_rating()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into notifications (user_id, type, title, body, request_id)
+  values (new.rated_user_id, 'rating', 'You received a rating', new.stars::text || ' star(s)', new.request_id);
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_notify_new_rating on ratings;
+create trigger trg_notify_new_rating
+  after insert on ratings
+  for each row execute function notify_new_rating();
+```
+
+The notification `type` values these triggers write are `new_request`, `status_accepted`, `status_in_progress`, `status_completed`, `status_cancelled`, `message` and `rating`, which the app's `AppNotification.kind` maps to its five kinds.

@@ -18,6 +18,10 @@ private struct TrackedPoint: Equatable {
         CLLocation(latitude: latitude, longitude: longitude)
             .distance(from: CLLocation(latitude: other.latitude, longitude: other.longitude))
     }
+
+    func isWithinCampusRange(_ limit: CLLocationDistance) -> Bool {
+        distance(to: TrackedPoint(CampusArea.center)) <= limit
+    }
 }
 
 private struct PinPair: Equatable {
@@ -48,6 +52,7 @@ struct MapTrackingView: View {
     private let routeRefreshDistance: CLLocationDistance = 30
     private let routeMinInterval: TimeInterval = 10
     private let walkingSpeed: Double = 1.4
+    private let maxCampusDistance: CLLocationDistance = 20_000
 
     init(request: ServiceRequest) {
         self.request = request
@@ -64,6 +69,12 @@ struct MapTrackingView: View {
     private var pins: PinPair {
         PinPair(buddy: isBuddy ? myPoint : otherPoint,
                 client: isBuddy ? otherPoint : myPoint)
+    }
+
+    private var hasFarLocation: Bool {
+        [pins.buddy, pins.client]
+            .compactMap { $0 }
+            .contains { !$0.isWithinCampusRange(maxCampusDistance) }
     }
 
     private var straightDistance: CLLocationDistance? {
@@ -89,12 +100,14 @@ struct MapTrackingView: View {
                 .stroke(Theme.brand, lineWidth: 2)
                 .foregroundStyle(Theme.brand.opacity(0.12))
 
-            if let route {
-                MapPolyline(route.polyline)
-                    .stroke(Theme.brand, lineWidth: 5)
-            } else if routeFailed, let buddy = pins.buddy, let client = pins.client {
-                MapPolyline(coordinates: [buddy.coordinate, client.coordinate])
-                    .stroke(Theme.brand, style: StrokeStyle(lineWidth: 5, lineCap: .round, dash: [8, 8]))
+            if !hasFarLocation {
+                if let route {
+                    MapPolyline(route.polyline)
+                        .stroke(Theme.brand, lineWidth: 5)
+                } else if routeFailed, let buddy = pins.buddy, let client = pins.client {
+                    MapPolyline(coordinates: [buddy.coordinate, client.coordinate])
+                        .stroke(Theme.brand, style: StrokeStyle(lineWidth: 5, lineCap: .round, dash: [8, 8]))
+                }
             }
 
             if let buddy = pins.buddy {
@@ -129,12 +142,18 @@ struct MapTrackingView: View {
             .accessibilityLabel("Recenter map")
         }
         .safeAreaInset(edge: .bottom) {
-            TrackingInfoCard(
-                name: otherDisplayName,
-                subtitle: isBuddy ? "Client" : "Errand Buddy",
-                distance: displayDistance,
-                travelTime: displayTravelTime
-            )
+            VStack(spacing: 8) {
+                if hasFarLocation {
+                    outsideCampusBanner
+                }
+
+                TrackingInfoCard(
+                    name: otherDisplayName,
+                    subtitle: isBuddy ? "Client" : "Errand Buddy",
+                    distance: displayDistance,
+                    travelTime: displayTravelTime
+                )
+            }
             .padding(.horizontal)
             .padding(.bottom, 8)
         }
@@ -149,12 +168,27 @@ struct MapTrackingView: View {
             }
             refreshRoute()
         }
+        .onChange(of: hasFarLocation) {
+            fitCamera()
+        }
         .onChange(of: status) { _, newStatus in
             if newStatus != .accepted && newStatus != .inProgress {
                 tearDown()
             }
         }
         .onDisappear { tearDown() }
+    }
+
+    private var outsideCampusBanner: some View {
+        Label("A location is outside the campus area. Check your device location.",
+              systemImage: "exclamationmark.triangle.fill")
+            .font(.caption.bold())
+            .foregroundStyle(.orange)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Theme.fieldRadius))
     }
 
     private func pin(icon: String, color: Color) -> some View {
@@ -201,6 +235,13 @@ struct MapTrackingView: View {
     }
 
     private func fitCamera() {
+        if hasFarLocation {
+            withAnimation {
+                cameraPosition = .region(CampusArea.region)
+            }
+            return
+        }
+
         let points = [pins.buddy, pins.client].compactMap { $0 }
         guard let first = points.first else { return }
 
@@ -231,6 +272,16 @@ struct MapTrackingView: View {
 
     private func refreshRoute() {
         guard isActive, let buddy = pins.buddy, let client = pins.client else { return }
+
+        if hasFarLocation {
+            routeTask?.cancel()
+            routeTask = nil
+            route = nil
+            routeFailed = false
+            routedBuddy = nil
+            routedClient = nil
+            return
+        }
 
         if let lastBuddy = routedBuddy, let lastClient = routedClient,
            buddy.distance(to: lastBuddy) < routeRefreshDistance,

@@ -82,7 +82,7 @@ struct HomeDashboardView: View {
                         style: .centered
                     )
                     .overlay(alignment: .topTrailing) {
-                        messagesLink
+                        headerButtons
                     }
 
                     VStack(alignment: .leading, spacing: Theme.spacingXLarge) {
@@ -100,9 +100,9 @@ struct HomeDashboardView: View {
                         }
 
                         if isBuddy {
+                            buddyOpenOrders
                             availabilityToggle
                             buddyOverview
-                            buddyOpenOrders
                             completedJobsList
                         } else {
                             clientServices
@@ -140,6 +140,35 @@ struct HomeDashboardView: View {
         }
     }
 
+    private var headerButtons: some View {
+        HStack(spacing: 10) {
+            notificationsLink
+            messagesLink
+        }
+        .padding(.top, 64)
+        .padding(.trailing, Theme.spacingXLarge)
+    }
+
+    private var notificationsLink: some View {
+        NavigationLink {
+            NotificationsView()
+        } label: {
+            Image(systemName: "bell.fill")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(.white.opacity(0.18))
+                .clipShape(Circle())
+                .overlay(alignment: .topTrailing) {
+                    if supabase.unreadNotificationCount > 0 {
+                        UnreadBadge(count: supabase.unreadNotificationCount, tint: .red, bordered: true)
+                            .offset(x: 8, y: -8)
+                    }
+                }
+        }
+        .accessibilityLabel("Notifications")
+    }
+
     private var messagesLink: some View {
         NavigationLink {
             ConversationListView()
@@ -150,9 +179,13 @@ struct HomeDashboardView: View {
                 .frame(width: 40, height: 40)
                 .background(.white.opacity(0.18))
                 .clipShape(Circle())
+                .overlay(alignment: .topTrailing) {
+                    if supabase.unreadMessageCount > 0 {
+                        UnreadBadge(count: supabase.unreadMessageCount, tint: .red, bordered: true)
+                            .offset(x: 8, y: -8)
+                    }
+                }
         }
-        .padding(.top, 64)
-        .padding(.trailing, Theme.spacingXLarge)
         .accessibilityLabel("Messages")
     }
 
@@ -217,7 +250,13 @@ struct HomeDashboardView: View {
     }
 
     private var buddyOpenOrders: some View {
-        section("Available Orders") {
+        VStack(alignment: .leading, spacing: Theme.spacingMedium) {
+            HStack(spacing: 8) {
+                Text("Available Orders").font(.headline)
+                CountPill(count: openRequests.count)
+                Spacer()
+            }
+
             Picker("Filter", selection: $orderFilter) {
                 ForEach(OrderFilter.allCases) { filter in
                     Text(filter.rawValue).tag(filter)
@@ -246,11 +285,19 @@ struct HomeDashboardView: View {
                 NavigationLink {
                     RequestDetailView(request: request)
                 } label: {
-                    orderRow(for: request)
+                    OrderRow(request: request)
                 }
                 .buttonStyle(.plain)
             }
         }
+        .padding(Theme.spacingLarge)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.brand.opacity(0.08))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
+                .stroke(Theme.brand.opacity(0.4), lineWidth: 1.5)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
     }
 
     private var visibleOrders: [ServiceRequest] {
@@ -336,50 +383,20 @@ struct HomeDashboardView: View {
     }
 
     private var emptyOrdersState: some View {
-        EmptyStateView(
-            icon: "tray",
-            title: "No open requests right now",
-            message: "New requests will show up here as soon as a client posts one."
-        )
-    }
-
-    private func orderRow(for request: ServiceRequest) -> some View {
-        CardContainer(spacing: 0, padding: Theme.spacingMedium, fillsWidth: true) {
-            HStack(spacing: Theme.spacingMedium) {
-                Image(systemName: request.type.iconName)
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(Theme.brand)
-                    .clipShape(Circle())
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(request.type.displayName)
-                            .font(.subheadline.bold())
-                        if request.isUrgent {
-                            Text("URGENT")
-                                .font(.caption2.bold())
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(.red.opacity(0.15))
-                                .foregroundStyle(.red)
-                                .clipShape(Capsule())
-                        }
-                    }
-                    Text(request.meetingPlace)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(request.createdAt.formatted(date: .omitted, time: .shortened))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
+        HStack(spacing: Theme.spacingMedium) {
+            Image(systemName: "tray")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No open requests right now")
+                    .font(.subheadline.bold())
+                Text("New requests will show up here as soon as a client posts one.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Spacer()
         }
+        .padding(.vertical, 4)
     }
 
     private var clientServices: some View {
